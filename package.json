@@ -1,0 +1,13 @@
+{
+  "name": "openrouter-chat-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CLI simples para conversar com IA via OpenRouter (Gemini 2.5 mini)",
+  "scripts": {
+    "start": "node src/chat.js"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2"
+  }
+}
