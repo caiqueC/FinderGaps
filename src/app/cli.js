@@ -1,7 +1,7 @@
 import readline from 'node:readline';
 import { loadEnv } from '../services/env.js';
 import { collectCommercialSites, dedupeReferencesByTopic } from '../services/search.js';
-import { API_URL, MODEL } from '../services/openrouter.js';
+import { API_URL, MODEL, generateKeywordsFromInput } from '../services/openrouter.js';
 import { braveSearch } from '../services/brave.js';
 
 const fetchFn = async () => {
@@ -47,8 +47,26 @@ async function main() {
     const userInput = (await ask('Você: ')).trim();
     if (!userInput || userInput.toLowerCase() === 'sair') break;
     try {
+      let keywordPlan = await generateKeywordsFromInput(f, openKey, userInput);
+      console.log('Gerando palavras‑chave...', { confidence: keywordPlan.confidence });
+      if ((keywordPlan.competitor || []).length) console.log('Keywords concorrentes:', keywordPlan.competitor.join(', '));
+      if ((keywordPlan.reference || []).length) console.log('Keywords referências:', keywordPlan.reference.join(', '));
+      if ((keywordPlan.confidence || 0) < 0.7 && keywordPlan.questions && keywordPlan.questions.length) {
+        console.log('Ambiguidade detectada, coletando clarificações...');
+        for (const q of keywordPlan.questions.slice(0, 5)) {
+          const ans = (await ask(`${q} `)).trim();
+          if (ans) userInput = `${userInput}\n${ans}`;
+        }
+        keywordPlan = await generateKeywordsFromInput(f, openKey, userInput);
+      }
+      const extraKw = Array.from(new Set([...(keywordPlan.competitor || []), ...(keywordPlan.reference || [])]));
+      console.log('Palavras‑chave finais:', extraKw.join(', '));
       console.log('Coletando referências comerciais...', { termo: userInput });
-      const catalog = await collectCommercialSites(f, braveKey, userInput, 100, 20, openKey);
+      const catalog = await collectCommercialSites(f, braveKey, userInput, 100, 20, openKey, extraKw, (info) => {
+        if (info?.event === 'variants') console.log('Consultando variantes...', { count: info.count, preview: info.preview });
+        if (info?.event === 'domains') console.log('Domínios coletados:', { count: info.count });
+        if (info?.event === 'classified') console.log('Classificação concluída:', { competitors: info.competitors, references: info.references });
+      });
       const total = (catalog.competitors?.length || 0) + (catalog.references?.length || 0);
       if (!total) { console.log('Sem resultados.'); continue; }
       console.log(`Concorrentes (${catalog.competitors.length}):`);
@@ -62,6 +80,7 @@ async function main() {
       }
       console.log('Classificando relevância e removendo duplicatas de tópico...');
       const filteredRefs = await dedupeReferencesByTopic(f, openKey, userInput, catalog.references);
+      console.log('Resumo referências:', { antes: catalog.references.length, depois: filteredRefs.length });
       console.log(`Referências (${filteredRefs.length}):`);
       for (let i = 0; i < Math.min(filteredRefs.length, 50); i++) {
         const r = filteredRefs[i];

@@ -82,3 +82,34 @@ export async function generateCompetitorKeywords(f, openKey, term) {
     return arr.filter((s) => typeof s === 'string').map((s) => s.trim()).filter(Boolean);
   } catch { return []; }
 }
+
+export async function generateKeywordsFromInput(f, openKey, inputText) {
+  if (!openKey) return { competitor: [], reference: [], confidence: 0.0, questions: [] };
+  try {
+    const messages = [
+      { role: 'system', content: 'Responda apenas JSON: {"competitor":[...],"reference":[...],"confidence":0-1,"questions":[...]}. Extraia palavras‑chave altamente precisas a partir do texto do usuário para duas finalidades: buscar concorrentes (quem vende um produto/serviço diretamente relacionado) e buscar referências (conteúdos informativos). Se o texto permitir múltiplas interpretações, reduza "confidence" e inclua perguntas específicas e objetivas para eliminar ambiguidade. Não invente termos sem suporte do texto; prefira termos amplos apenas se necessários.' },
+      { role: 'user', content: String(inputText || '') },
+    ];
+    const resp = await f(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openKey}`, 'X-Title': 'FinderGaps Keyword Gen' },
+      body: JSON.stringify({ model: MODEL, temperature: 0, messages }),
+    });
+    if (!resp.ok) return { competitor: [], reference: [], confidence: 0.0, questions: [] };
+    const data = await resp.json();
+    const content = data?.choices?.[0]?.message?.content || '';
+    const parsed = parseJsonLoose(content);
+    const competitor = Array.isArray(parsed?.competitor) ? parsed.competitor : [];
+    const reference = Array.isArray(parsed?.reference) ? parsed.reference : [];
+    const confidence = typeof parsed?.confidence === 'number' ? parsed.confidence : 0.5;
+    const questions = Array.isArray(parsed?.questions) ? parsed.questions : [];
+    return {
+      competitor: competitor.filter((s) => typeof s === 'string').map((s) => s.trim()).filter(Boolean),
+      reference: reference.filter((s) => typeof s === 'string').map((s) => s.trim()).filter(Boolean),
+      confidence,
+      questions: questions.filter((s) => typeof s === 'string').map((s) => s.trim()).filter(Boolean),
+    };
+  } catch {
+    return { competitor: [], reference: [], confidence: 0.0, questions: [] };
+  }
+}

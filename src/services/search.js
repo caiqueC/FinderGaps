@@ -69,12 +69,19 @@ export function classifyHeuristic(term, r) {
   return 'reference';
 }
 
-export async function collectCommercialSites(f, braveKey, term, maxDomains = 100, maxResultsPerVariant = 20, openKey) {
-  const variants = buildQueryVariants(term);
-  const extra = await generateCompetitorKeywords(f, openKey, term);
-  for (const k of extra) {
-    variants.push(`${term} ${k}`);
-    variants.push(k);
+export async function collectCommercialSites(f, braveKey, term, maxDomains = 100, maxResultsPerVariant = 20, openKey, extraKeywords = [], onProgress) {
+  const base = buildQueryVariants(term);
+  const extra = [
+    ...extraKeywords,
+    ...(await generateCompetitorKeywords(f, openKey, term)),
+  ];
+  const variants = Array.from(new Set([
+    ...base,
+    ...extra.map((k) => `${term} ${k}`),
+    ...extra,
+  ]));
+  if (typeof onProgress === 'function') {
+    onProgress({ event: 'variants', term, count: variants.length, preview: variants.slice(0, 10) });
   }
   const seenHosts = new Set();
   const domains = [];
@@ -101,6 +108,9 @@ export async function collectCommercialSites(f, braveKey, term, maxDomains = 100
     }
     if (domains.length >= maxDomains) break;
   }
+  if (typeof onProgress === 'function') {
+    onProgress({ event: 'domains', count: domains.length });
+  }
   const competitors = [];
   const references = [];
   for (const d of domains) {
@@ -124,6 +134,9 @@ export async function collectCommercialSites(f, braveKey, term, maxDomains = 100
     if (label === 'competitor') competitors.push(enriched);
     else references.push(enriched);
     if (competitors.length + references.length >= maxDomains) break;
+  }
+  if (typeof onProgress === 'function') {
+    onProgress({ event: 'classified', competitors: competitors.length, references: references.length });
   }
   return { competitors, references };
 }
