@@ -113,3 +113,30 @@ export async function generateKeywordsFromInput(f, openKey, inputText) {
     return { competitor: [], reference: [], confidence: 0.0, questions: [] };
   }
 }
+
+export async function summarizeCompetitorOffering(f, openKey, term, item, pageText) {
+  if (!openKey) return null;
+  try {
+    const messages = [
+      { role: 'system', content: 'Responda apenas JSON: {"summary":"...","features":[...],"target":"...","pricing":"...","category":"..."}. Com base no título, URL e conteúdo da página, resuma claramente o que este concorrente oferece (produto/serviço), principais funcionalidades, público-alvo, modelo de preço e a categoria geral. Seja objetivo e não invente informações ausentes.' },
+      { role: 'user', content: `Termo: ${term}\nTitulo: ${item.title}\nURL: ${item.url}\nDescricao: ${item.description || ''}\nConteudo: ${pageText || ''}` },
+    ];
+    const resp = await f(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openKey}`, 'X-Title': 'FinderGaps Offering Summary' },
+      body: JSON.stringify({ model: MODEL, temperature: 0, messages }),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const content = data?.choices?.[0]?.message?.content || '';
+    const parsed = parseJsonLoose(content);
+    const summary = typeof parsed?.summary === 'string' ? parsed.summary : '';
+    const features = Array.isArray(parsed?.features) ? parsed.features.filter((s) => typeof s === 'string').map((s) => s.trim()).filter(Boolean) : [];
+    const target = typeof parsed?.target === 'string' ? parsed.target : '';
+    const pricing = typeof parsed?.pricing === 'string' ? parsed.pricing : '';
+    const category = typeof parsed?.category === 'string' ? parsed.category : '';
+    return { summary, features, target, pricing, category };
+  } catch {
+    return null;
+  }
+}

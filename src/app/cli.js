@@ -1,7 +1,9 @@
 import readline from 'node:readline';
 import { loadEnv } from '../services/env.js';
 import { collectCommercialSites, dedupeReferencesByTopic } from '../services/search.js';
-import { API_URL, MODEL, generateKeywordsFromInput } from '../services/openrouter.js';
+import { API_URL, MODEL, generateKeywordsFromInput, summarizeCompetitorOffering } from '../services/openrouter.js';
+import { fetchPageText } from '../services/content.js';
+import { saveHtmlReport } from '../services/report.js';
 import { braveSearch } from '../services/brave.js';
 
 const fetchFn = async () => {
@@ -69,6 +71,7 @@ async function main() {
       });
       const total = (catalog.competitors?.length || 0) + (catalog.references?.length || 0);
       if (!total) { console.log('Sem resultados.'); continue; }
+      const competitorDetails = [];
       console.log(`Concorrentes (${catalog.competitors.length}):`);
       for (let i = 0; i < Math.min(catalog.competitors.length, 50); i++) {
         const r = catalog.competitors[i];
@@ -76,6 +79,16 @@ async function main() {
         console.log(r.url);
         if (r.description) console.log(r.description);
         if (r.product_service) console.log(r.product_service);
+        const text = await fetchPageText(f, r.url, 8000);
+        const sum = await summarizeCompetitorOffering(f, openKey, userInput, r, text);
+        if (sum) {
+          console.log('Resumo do que oferece:', sum.summary || '');
+          if ((sum.features || []).length) console.log('Principais funcionalidades:', (sum.features || []).join(', '));
+          if (sum.target) console.log('Público-alvo:', sum.target);
+          if (sum.pricing) console.log('Modelo de preço:', sum.pricing);
+          if (sum.category) console.log('Categoria:', sum.category);
+          competitorDetails.push({ title: r.title, url: r.url, description: r.description, product_service: r.product_service, ...sum });
+        }
         console.log('');
       }
       console.log('Classificando relevância e removendo duplicatas de tópico...');
@@ -91,6 +104,16 @@ async function main() {
         if (r.product_service) console.log(r.product_service);
         console.log('');
       }
+
+      const file = await saveHtmlReport(userInput, {
+        keywordPlan,
+        extraKeywords: extraKw,
+        competitors: catalog.competitors,
+        competitorDetails,
+        referencesBefore: catalog.references.length,
+        referencesAfter: filteredRefs.length,
+      });
+      console.log('Relatório salvo em:', file);
     } catch (err) {
       console.error('Falha ao consultar a Brave API:', err?.message || err);
     }
