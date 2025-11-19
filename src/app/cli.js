@@ -3,7 +3,7 @@ import { loadEnv } from '../services/env.js';
 import { collectCommercialSites, dedupeReferencesByTopic } from '../services/search.js';
 import { API_URL, MODEL, generateKeywordsFromInput, summarizeCompetitorOffering } from '../services/openrouter.js';
 import { fetchPageText } from '../services/content.js';
-import { saveHtmlReport } from '../services/report.js';
+import { saveReports } from '../services/report.js';
 import { braveSearch } from '../services/brave.js';
 
 const fetchFn = async () => {
@@ -105,7 +105,7 @@ async function main() {
         console.log('');
       }
 
-      const file = await saveHtmlReport(userInput, {
+      const files = await saveReports(userInput, {
         keywordPlan,
         extraKeywords: extraKw,
         competitors: catalog.competitors,
@@ -113,7 +113,7 @@ async function main() {
         referencesBefore: catalog.references.length,
         referencesAfter: filteredRefs.length,
       });
-      console.log('Relatório salvo em:', file);
+      console.log('Relatórios salvos:', files);
     } catch (err) {
       console.error('Falha ao consultar a Brave API:', err?.message || err);
     }

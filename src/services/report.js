@@ -46,3 +46,16 @@ export async function saveHtmlReport(term, data) {
   await writeFile(file, html, 'utf8');
   return file;
 }
+
+export async function saveReports(term, data) {
+  const dir = 'reports';
+  await mkdir(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const base = `${stamp}_${slugify(term)}`;
+  const html = renderHtmlReport({ term, ...data });
+  const htmlPath = `${dir}/${base}.html`;
+  const jsonPath = `${dir}/${base}.json`;
+  await writeFile(htmlPath, html, 'utf8');
+  await writeFile(jsonPath, JSON.stringify({ term, ...data }, null, 2), 'utf8');
+  return { html: htmlPath, json: jsonPath };
+}
