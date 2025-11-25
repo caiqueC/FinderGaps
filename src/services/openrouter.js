@@ -140,3 +140,78 @@ export async function summarizeCompetitorOffering(f, openKey, term, item, pageTe
     return null;
   }
 }
+
+export async function summarizeComplaint(f, openKey, brand, url, pageText) {
+  if (!openKey) return null;
+  try {
+    const messages = [
+      { role: 'system', content: 'Responda apenas JSON: {"summary":"..."}. Resuma em uma frase objetiva o conteúdo desta reclamação, sem detalhes sensíveis e sem inventar fatos.' },
+      { role: 'user', content: `Marca: ${brand}\nURL: ${url}\nConteudo: ${String(pageText || '').slice(0, 6000)}` },
+    ];
+    const resp = await f(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openKey}`, 'X-Title': 'FinderGaps Complaint Summary' },
+      body: JSON.stringify({ model: MODEL, temperature: 0, messages }),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const content = data?.choices?.[0]?.message?.content || '';
+    const parsed = parseJsonLoose(content);
+    const summary = typeof parsed?.summary === 'string' ? parsed.summary : '';
+    return { summary };
+  } catch {
+    return null;
+  }
+}
+
+export async function generateReportNarrative(f, openKey, term, data) {
+  if (!openKey) return null;
+  try {
+    const context = JSON.stringify({
+      term,
+      keywords: data.keywordPlan,
+      competitors: data.competitorDetails.map(c => ({ title: c.title, summary: c.summary, features: c.features, complaints: c.reclameAqui.map(r => r.summary) })),
+      references: data.extraKeywords // Using keywords as proxy for references context if needed
+    }).slice(0, 30000); // Limit context size
+
+    const messages = [
+      {
+        role: 'system', content: `Você é um consultor de negócios sênior especializado em análise de mercado e estratégia.
+      Seu objetivo é gerar um relatório executivo de alto nível.
+      
+      Responda APENAS JSON válido.
+      IMPORTANTE: O texto gerado conterá quebras de linha. Você DEVE escapar todas as quebras de linha como \\n e aspas duplas como \\".
+      Não use caracteres de controle reais (newlines, tabs) dentro das strings JSON.
+      
+      Formato esperado:
+      {
+        "idea_elaboration": "Texto...",
+        "direct_competitors": "Texto...",
+        "indirect_competitors": "Texto...",
+        "gaps": "Texto..."
+      }
+      
+      Instruções de conteúdo:
+      - idea_elaboration: Texto aprofundado e envolvente sobre o termo pesquisado. Contextualize o mercado, tendências atuais e por que esse tema é relevante agora. Use storytelling corporativo.
+      - direct_competitors: Resumo executivo conciso sobre o cenário competitivo. Não liste cada empresa individualmente aqui, mas sim agrupe-as por características ou destaque os principais players de forma resumida. Foco no 'big picture'.
+      - indirect_competitors: Breve panorama sobre soluções alternativas ou indiretas.
+      - gaps: A seção mais importante. Análise profunda e detalhada das oportunidades de mercado. Baseie-se nas reclamações e fraquezas dos concorrentes para propor soluções inovadoras. Seja propositivo e estratégico. Use parágrafos bem estruturados.
+      ` },
+      { role: 'user', content: `Dados do relatório: ${context}` },
+    ];
+
+    const resp = await f(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openKey}`, 'X-Title': 'FinderGaps Narrative Gen' },
+      body: JSON.stringify({ model: MODEL, temperature: 0.7, messages }),
+    });
+
+    if (!resp.ok) return null;
+    const respData = await resp.json();
+    const content = respData?.choices?.[0]?.message?.content || '';
+    return parseJsonLoose(content);
+  } catch (e) {
+    console.error('Narrative gen error:', e);
+    return null;
+  }
+}

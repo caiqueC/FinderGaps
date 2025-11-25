@@ -1,9 +1,10 @@
 import readline from 'node:readline';
 import { loadEnv } from '../services/env.js';
 import { collectCommercialSites, dedupeReferencesByTopic } from '../services/search.js';
-import { API_URL, MODEL, generateKeywordsFromInput, summarizeCompetitorOffering } from '../services/openrouter.js';
-import { fetchPageText } from '../services/content.js';
+import { API_URL, MODEL, generateKeywordsFromInput, summarizeCompetitorOffering, summarizeComplaint } from '../services/openrouter.js';
+import { fetchPageText, isBlockedContent } from '../services/content.js';
 import { saveReports } from '../services/report.js';
+import { findComplaintsLinks } from '../services/reclameaqui.js';
 import { braveSearch } from '../services/brave.js';
 
 const fetchFn = async () => {
@@ -22,7 +23,7 @@ async function main() {
 
   let braveKey = process.env.BRAVE_API_KEY;
   while (true) {
-    try { await braveSearch(f, braveKey, 'key check', 1); break; } catch {}
+    try { await braveSearch(f, braveKey, 'key check', 1); break; } catch { }
     const input = (await ask('Informe sua BRAVE_API_KEY: ')).trim();
     if (!input) { console.error('Chave Brave obrigatória. Encerrado.'); rl.close(); return; }
     braveKey = input;
@@ -33,9 +34,9 @@ async function main() {
   let openKey = process.env.OPENROUTER_API_KEY;
   while (true) {
     try {
-      const resp = await f(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openKey}`, 'X-Title': 'FinderGaps Key Check' }, body: JSON.stringify({ model: MODEL, temperature: 0, messages: [ { role: 'system', content: 'Responda apenas a palavra OK.' }, { role: 'user', content: 'OK' } ] }) });
+      const resp = await f(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openKey}`, 'X-Title': 'FinderGaps Key Check' }, body: JSON.stringify({ model: MODEL, temperature: 0, messages: [{ role: 'system', content: 'Responda apenas a palavra OK.' }, { role: 'user', content: 'OK' }] }) });
       if (resp.ok) break;
-    } catch {}
+    } catch { }
     const input2 = (await ask('Informe sua OPENROUTER_API_KEY: ')).trim();
     if (!input2) { console.error('OpenRouter API key obrigatória. Encerrado.'); rl.close(); return; }
     openKey = input2;
@@ -49,6 +50,9 @@ async function main() {
     const userInput = (await ask('Você: ')).trim();
     if (!userInput || userInput.toLowerCase() === 'sair') break;
     try {
+      const startTime = Date.now();
+      console.log('Iniciando processo de busca...');
+
       let keywordPlan = await generateKeywordsFromInput(f, openKey, userInput);
       console.log('Gerando palavras‑chave...', { confidence: keywordPlan.confidence });
       if ((keywordPlan.competitor || []).length) console.log('Keywords concorrentes:', keywordPlan.competitor.join(', '));
@@ -87,8 +91,22 @@ async function main() {
           if (sum.target) console.log('Público-alvo:', sum.target);
           if (sum.pricing) console.log('Modelo de preço:', sum.pricing);
           if (sum.category) console.log('Categoria:', sum.category);
-          competitorDetails.push({ title: r.title, url: r.url, description: r.description, product_service: r.product_service, ...sum });
         }
+        let host = '';
+        try { host = new URL(r.url).hostname.toLowerCase(); } catch { }
+        const complaints = await findComplaintsLinks(f, braveKey, r.title || host, host, 20);
+        console.log('Reclame Aqui links encontrados:', complaints.length);
+        if (!complaints.length) console.log('Nenhum link encontrado — verifique nome/host.');
+        const enrichedComplaints = [];
+        for (const c of complaints) {
+          const cText = await fetchPageText(f, c.url, 6000);
+          const blocked = isBlockedContent(cText) || !cText;
+          if (blocked) console.log('Conteúdo bloqueado ou vazio, usando fallback com snippet Brave:', c.url);
+          const baseText = blocked ? (c.description || c.title || '') : cText;
+          const cSum = await summarizeComplaint(f, openKey, r.title || host, c.url, baseText);
+          enrichedComplaints.push({ ...c, summary: cSum?.summary || '' });
+        }
+        competitorDetails.push({ title: r.title, url: r.url, description: r.description, product_service: r.product_service, ...(sum || {}), reclameAqui: enrichedComplaints });
         console.log('');
       }
       console.log('Classificando relevância e removendo duplicatas de tópico...');
@@ -114,6 +132,12 @@ async function main() {
         referencesAfter: filteredRefs.length,
       });
       console.log('Relatórios salvos:', files);
+
+      const endTime = Date.now();
+      const durationMs = endTime - startTime;
+      const minutes = Math.floor(durationMs / 60000);
+      const seconds = ((durationMs % 60000) / 1000).toFixed(0);
+      console.log(`Tempo total do processo: ${minutes}m ${seconds}s`);
     } catch (err) {
       console.error('Falha ao consultar a Brave API:', err?.message || err);
     }
