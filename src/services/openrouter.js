@@ -177,25 +177,27 @@ export async function generateReportNarrative(f, openKey, term, data) {
     const messages = [
       {
         role: 'system', content: `Você é um consultor de negócios sênior especializado em análise de mercado e estratégia.
-      Seu objetivo é gerar um relatório executivo de alto nível.
+      Seu objetivo é gerar um relatório executivo de alto nível, focado em OPORTUNIDADES.
       
       Responda APENAS JSON válido.
-      IMPORTANTE: O texto gerado conterá quebras de linha. Você DEVE escapar todas as quebras de linha como \\n e aspas duplas como \\".
-      Não use caracteres de controle reais (newlines, tabs) dentro das strings JSON.
+      CRÍTICO: O texto gerado será longo. Você DEVE garantir que todas as aspas duplas dentro do texto sejam escapadas (\\") e que não haja quebras de linha reais no meio das strings (use \\n).
+      Se necessário, simplifique a formatação interna do texto para garantir o JSON válido.
       
       Formato esperado:
       {
         "idea_elaboration": "Texto...",
         "direct_competitors": "Texto...",
         "indirect_competitors": "Texto...",
-        "gaps": "Texto..."
+        "gaps": "Texto...",
+        "conclusion": "Texto..."
       }
       
       Instruções de conteúdo:
-      - idea_elaboration: Texto aprofundado e envolvente sobre o termo pesquisado. Contextualize o mercado, tendências atuais e por que esse tema é relevante agora. Use storytelling corporativo.
-      - direct_competitors: Resumo executivo conciso sobre o cenário competitivo. Não liste cada empresa individualmente aqui, mas sim agrupe-as por características ou destaque os principais players de forma resumida. Foco no 'big picture'.
-      - indirect_competitors: Breve panorama sobre soluções alternativas ou indiretas.
-      - gaps: A seção mais importante. Análise profunda e detalhada das oportunidades de mercado. Baseie-se nas reclamações e fraquezas dos concorrentes para propor soluções inovadoras. Seja propositivo e estratégico. Use parágrafos bem estruturados.
+      - idea_elaboration: Texto EXTENSO, aprofundado e envolvente sobre o termo pesquisado. Contextualize o mercado, tendências atuais e por que esse tema é relevante agora. Use storytelling corporativo. Não seja breve. Explore todas as nuances do tema.
+      - direct_competitors: Texto narrativo DETALHADO que CITE os nomes dos concorrentes encontrados dentro do contexto da análise. Use os dados específicos (preços, features, reclamações) que estão no JSON para embasar sua análise. O foco NÃO é julgar os concorrentes, mas sim usar seus modelos para identificar oportunidades de mercado. Mostre o que eles estão deixando passar. Seja específico.
+      - indirect_competitors: Texto narrativo sobre soluções alternativas. Novamente, cite exemplos se houver, mas foque em como essas alternativas deixam espaço para uma nova solução inovadora. Explique POR QUE elas não são suficientes.
+      - gaps: Análise PROFUNDA e EXTENSIVA das lacunas de mercado. Baseie-se nas reclamações reais para identificar o que FALTA no mercado. Não apenas liste os gaps, explique o impacto deles no consumidor e a oportunidade de negócio que eles geram.
+      - conclusion: A síntese final. Deve ser MUITO DETALHADA e VISIONÁRIA. Junte a visão da ideia com os gaps identificados para descrever o "Produto Ideal" em detalhes. Como ele deve ser para vencer nesse mercado? Quais features ele deve ter? Qual deve ser o posicionamento? Termine com uma visão inspiradora e estratégica.
       ` },
       { role: 'user', content: `Dados do relatório: ${context}` },
     ];
