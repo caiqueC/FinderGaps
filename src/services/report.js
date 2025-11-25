@@ -88,10 +88,11 @@ export function renderHtmlReport({ term, keywordPlan, extraKeywords, competitors
       padding: 60px 40px;
       max-width: 900px;
       margin: 0 auto;
-      min-height: 80vh;
+      min-height: 50vh; /* Reduced min-height to allow better flow */
       display: flex;
       flex-direction: column;
-      justify-content: center;
+      justify-content: flex-start; /* Align to top */
+      page-break-inside: avoid; /* Try to keep sections together */
     }
     
     .section-header {
@@ -100,6 +101,7 @@ export function renderHtmlReport({ term, keywordPlan, extraKeywords, competitors
       margin-bottom: 40px;
       border-bottom: 2px solid #000;
       padding-bottom: 20px;
+      page-break-after: avoid; /* Keep header with content */
     }
     .section-num {
       font-size: 2rem;
@@ -124,6 +126,7 @@ export function renderHtmlReport({ term, keywordPlan, extraKeywords, competitors
     
     .keyword-group {
       margin-bottom: 20px;
+      page-break-inside: avoid;
     }
     .keyword-label {
       font-weight: 600;
@@ -155,6 +158,7 @@ export function renderHtmlReport({ term, keywordPlan, extraKeywords, competitors
       border: 1px solid #eee;
       border-radius: 8px;
       background: #fafafa;
+      page-break-inside: avoid;
     }
     .item-title {
       font-size: 1.1rem;
@@ -191,6 +195,12 @@ export function renderHtmlReport({ term, keywordPlan, extraKeywords, competitors
       white-space: pre-line;
       line-height: 1.8;
       color: #444;
+      text-align: justify;
+    }
+    
+    .narrative-text b i {
+      color: #000;
+      font-weight: 700;
     }
     
     .ref-list {
@@ -206,6 +216,18 @@ export function renderHtmlReport({ term, keywordPlan, extraKeywords, competitors
   </style>
 </head>
 <body>`;
+
+  // Helper to format text
+  const formatText = (text) => {
+    if (!text) return '';
+    // First escape HTML to prevent XSS
+    let safe = htmlEscape(text);
+    // Then replace [[Name]] with <b><i>Name</i></b>
+    // We need to unescape the brackets first if htmlEscape touched them, but htmlEscape usually escapes < > & " '
+    // [ ] are usually safe, but let's be careful.
+    // If htmlEscape doesn't escape [ ], we can just replace.
+    return safe.replace(/\[\[(.*?)\]\]/g, '<b><i>$1</i></b>');
+  };
 
   // Data Preparation
   const kwComp = (keywordPlan?.competitor || []).map(k => `<span class="tag">${htmlEscape(k)}</span>`).join('');
@@ -287,11 +309,11 @@ export function renderHtmlReport({ term, keywordPlan, extraKeywords, competitors
   const gapsList = uniqueComplaints.map(c => `<li>${htmlEscape(c)}</li>`).join('');
 
   // Narratives
-  const ideaText = narratives?.idea_elaboration ? `<div class="narrative-text">${htmlEscape(narratives.idea_elaboration)}</div>` : '<p>Análise inicial baseada no termo pesquisado, identificando concorrentes e referências de mercado.</p>';
-  const directText = narratives?.direct_competitors ? `<div class="narrative-text">${htmlEscape(narratives.direct_competitors)}</div>` : '<p>Análise dos principais players do mercado.</p>';
-  const indirectText = narratives?.indirect_competitors ? `<div class="narrative-text">${htmlEscape(narratives.indirect_competitors)}</div>` : '<p>Análise de soluções alternativas.</p>';
-  const gapsText = narratives?.gaps ? `<div class="narrative-text">${htmlEscape(narratives.gaps)}</div>` : '<p>Principais reclamações e pontos de melhoria identificados no mercado.</p>';
-  const conclusionText = narratives?.conclusion ? `<div class="narrative-text">${htmlEscape(narratives.conclusion)}</div>` : '<p>Síntese da oportunidade de produto.</p>';
+  const ideaText = narratives?.idea_elaboration ? `<div class="narrative-text">${formatText(narratives.idea_elaboration)}</div>` : '<p>Análise inicial baseada no termo pesquisado, identificando concorrentes e referências de mercado.</p>';
+  const directText = narratives?.direct_competitors ? `<div class="narrative-text">${formatText(narratives.direct_competitors)}</div>` : '<p>Análise dos principais players do mercado.</p>';
+  const indirectText = narratives?.indirect_competitors ? `<div class="narrative-text">${formatText(narratives.indirect_competitors)}</div>` : '<p>Análise de soluções alternativas.</p>';
+  const gapsText = narratives?.gaps ? `<div class="narrative-text">${formatText(narratives.gaps)}</div>` : '<p>Principais reclamações e pontos de melhoria identificados no mercado.</p>';
+  const conclusionText = narratives?.conclusion ? `<div class="narrative-text">${formatText(narratives.conclusion)}</div>` : '<p>Síntese da oportunidade de produto.</p>';
 
   return `
     ${head}
@@ -416,6 +438,17 @@ export async function renderPdfReport(html, outputPath) {
   const browser = await puppeteer.launch({ headless: 'new' });
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: 'networkidle0' });
-  await page.pdf({ path: outputPath, format: 'A4', printBackground: true, margin: { top: '0px', right: '0px', bottom: '0px', left: '0px' } });
+  // Added margins to fix text alignment issues on page breaks
+  await page.pdf({
+    path: outputPath,
+    format: 'A4',
+    printBackground: true,
+    margin: {
+      top: '20mm',
+      right: '15mm',
+      bottom: '20mm',
+      left: '15mm'
+    }
+  });
   await browser.close();
 }

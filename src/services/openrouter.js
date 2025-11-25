@@ -193,11 +193,11 @@ export async function generateReportNarrative(f, openKey, term, data) {
       }
       
       Instruções de conteúdo:
-      - idea_elaboration: Texto EXTENSO, aprofundado e envolvente sobre o termo pesquisado. Contextualize o mercado, tendências atuais e por que esse tema é relevante agora. Use storytelling corporativo. Não seja breve. Explore todas as nuances do tema.
-      - direct_competitors: Texto narrativo DETALHADO que CITE os nomes dos concorrentes encontrados dentro do contexto da análise. Use os dados específicos (preços, features, reclamações) que estão no JSON para embasar sua análise. O foco NÃO é julgar os concorrentes, mas sim usar seus modelos para identificar oportunidades de mercado. Mostre o que eles estão deixando passar. Seja específico.
-      - indirect_competitors: Texto narrativo sobre soluções alternativas. Novamente, cite exemplos se houver, mas foque em como essas alternativas deixam espaço para uma nova solução inovadora. Explique POR QUE elas não são suficientes.
+      - idea_elaboration: Texto EXTENSO, aprofundado e envolvente sobre o termo pesquisado. Contextualize o mercado, tendências atuais e por que esse tema é relevante agora. Use storytelling corporativo, mas mantenha um tom PROFISSIONAL e "PÉ NO CHÃO". Evite exageros ou linguagem excessivamente sonhadora.
+      - direct_competitors: Texto narrativo DETALHADO. IMPORTANTE: Sempre que citar o nome de um concorrente, envolva-o em colchetes duplos, assim: [[Nome do Concorrente]]. Use os dados específicos (preços, features, reclamações) que estão no JSON para embasar sua análise. O foco NÃO é julgar os concorrentes, mas sim usar seus modelos para identificar oportunidades de mercado. Mostre o que eles estão deixando passar. Seja específico e estratégico.
+      - indirect_competitors: Texto narrativo sobre soluções alternativas. Envolva nomes de empresas/soluções em [[ ]]. Foque em como essas alternativas deixam espaço para uma nova solução inovadora. Explique POR QUE elas não são suficientes.
       - gaps: Análise PROFUNDA e EXTENSIVA das lacunas de mercado. Baseie-se nas reclamações reais para identificar o que FALTA no mercado. Não apenas liste os gaps, explique o impacto deles no consumidor e a oportunidade de negócio que eles geram.
-      - conclusion: A síntese final. Deve ser MUITO DETALHADA e VISIONÁRIA. Junte a visão da ideia com os gaps identificados para descrever o "Produto Ideal" em detalhes. Como ele deve ser para vencer nesse mercado? Quais features ele deve ter? Qual deve ser o posicionamento? Termine com uma visão inspiradora e estratégica.
+      - conclusion: A síntese final. Deve ser MUITO DETALHADA e VISIONÁRIA, mas REALISTA. Junte a visão da ideia com os gaps identificados para descrever o "Produto Ideal" em detalhes. Como ele deve ser para vencer nesse mercado? Quais features ele deve ter? Qual deve ser o posicionamento? Termine com uma visão inspiradora e estratégica, sem ser piegas.
       ` },
       { role: 'user', content: `Dados do relatório: ${context}` },
     ];
