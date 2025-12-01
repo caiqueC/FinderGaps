@@ -1,9 +1,10 @@
 import readline from 'node:readline';
+import { readFile } from 'node:fs/promises';
 import { loadEnv } from '../services/env.js';
 import { collectCommercialSites, dedupeReferencesByTopic } from '../services/search.js';
-import { API_URL, MODEL, generateKeywordsFromInput, summarizeCompetitorOffering, summarizeComplaint } from '../services/openrouter.js';
+import { API_URL, MODEL, generateKeywordsFromInput, summarizeCompetitorOffering, summarizeComplaint, generateReportNarrative } from '../services/openrouter.js';
 import { fetchPageText, isBlockedContent } from '../services/content.js';
-import { saveReports } from '../services/report.js';
+import { saveReports, renderPdfReport } from '../services/report.js';
 import { findComplaintsLinks } from '../services/reclameaqui.js';
 import { braveSearch } from '../services/brave.js';
 
@@ -51,14 +52,13 @@ async function main() {
     if (!userInput || userInput.toLowerCase() === 'sair') break;
     try {
       const startTime = Date.now();
-      console.log('Iniciando processo de busca...');
+      console.log('[ETAPA: BUSCA] Iniciando processo...');
 
       let keywordPlan = await generateKeywordsFromInput(f, openKey, userInput);
-      console.log('Gerando palavras‑chave...', { confidence: keywordPlan.confidence });
-      if ((keywordPlan.competitor || []).length) console.log('Keywords concorrentes:', keywordPlan.competitor.join(', '));
-      if ((keywordPlan.reference || []).length) console.log('Keywords referências:', keywordPlan.reference.join(', '));
+      console.log('[ETAPA: BUSCA] Gerando palavras‑chave...', { confidence: keywordPlan.confidence });
+
       if ((keywordPlan.confidence || 0) < 0.7 && keywordPlan.questions && keywordPlan.questions.length) {
-        console.log('Ambiguidade detectada, coletando clarificações...');
+        console.log('[ETAPA: BUSCA] Ambiguidade detectada, coletando clarificações...');
         for (const q of keywordPlan.questions.slice(0, 5)) {
           const ans = (await ask(`${q} `)).trim();
           if (ans) userInput = `${userInput}\n${ans}`;
@@ -66,72 +66,92 @@ async function main() {
         keywordPlan = await generateKeywordsFromInput(f, openKey, userInput);
       }
       const extraKw = Array.from(new Set([...(keywordPlan.competitor || []), ...(keywordPlan.reference || [])]));
-      console.log('Palavras‑chave finais:', extraKw.join(', '));
-      console.log('Coletando referências comerciais...', { termo: userInput });
-      const catalog = await collectCommercialSites(f, braveKey, userInput, 100, 20, openKey, extraKw, (info) => {
-        if (info?.event === 'variants') console.log('Consultando variantes...', { count: info.count, preview: info.preview });
-        if (info?.event === 'domains') console.log('Domínios coletados:', { count: info.count });
-        if (info?.event === 'classified') console.log('Classificação concluída:', { competitors: info.competitors, references: info.references });
-      });
-      const total = (catalog.competitors?.length || 0) + (catalog.references?.length || 0);
-      if (!total) { console.log('Sem resultados.'); continue; }
-      const competitorDetails = [];
-      console.log(`Concorrentes (${catalog.competitors.length}):`);
-      for (let i = 0; i < Math.min(catalog.competitors.length, 50); i++) {
-        const r = catalog.competitors[i];
-        console.log(`${i + 1}. ${r.title}`);
-        console.log(r.url);
-        if (r.description) console.log(r.description);
-        if (r.product_service) console.log(r.product_service);
-        const text = await fetchPageText(f, r.url, 8000);
-        const sum = await summarizeCompetitorOffering(f, openKey, userInput, r, text);
-        if (sum) {
-          console.log('Resumo do que oferece:', sum.summary || '');
-          if ((sum.features || []).length) console.log('Principais funcionalidades:', (sum.features || []).join(', '));
-          if (sum.target) console.log('Público-alvo:', sum.target);
-          if (sum.pricing) console.log('Modelo de preço:', sum.pricing);
-          if (sum.category) console.log('Categoria:', sum.category);
-        }
-        let host = '';
-        try { host = new URL(r.url).hostname.toLowerCase(); } catch { }
-        const complaints = await findComplaintsLinks(f, braveKey, r.title || host, host, 20);
-        console.log('Reclame Aqui links encontrados:', complaints.length);
-        if (!complaints.length) console.log('Nenhum link encontrado — verifique nome/host.');
-        const enrichedComplaints = [];
-        for (const c of complaints) {
-          const cText = await fetchPageText(f, c.url, 6000);
-          const blocked = isBlockedContent(cText) || !cText;
-          if (blocked) console.log('Conteúdo bloqueado ou vazio, usando fallback com snippet Brave:', c.url);
-          const baseText = blocked ? (c.description || c.title || '') : cText;
-          const cSum = await summarizeComplaint(f, openKey, r.title || host, c.url, baseText);
-          enrichedComplaints.push({ ...c, summary: cSum?.summary || '' });
-        }
-        competitorDetails.push({ title: r.title, url: r.url, description: r.description, product_service: r.product_service, ...(sum || {}), reclameAqui: enrichedComplaints });
-        console.log('');
-      }
-      console.log('Classificando relevância e removendo duplicatas de tópico...');
-      const filteredRefs = await dedupeReferencesByTopic(f, openKey, userInput, catalog.references);
-      console.log('Resumo referências:', { antes: catalog.references.length, depois: filteredRefs.length });
-      console.log(`Referências (${filteredRefs.length}):`);
-      for (let i = 0; i < Math.min(filteredRefs.length, 50); i++) {
-        const r = filteredRefs[i];
-        console.log(`${i + 1}. ${r.title}`);
-        console.log(r.url);
-        if (r.description) console.log(r.description);
-        if (r.topic) console.log(r.topic);
-        if (r.product_service) console.log(r.product_service);
-        console.log('');
-      }
+      console.log('[ETAPA: BUSCA] Coletando referências comerciais...');
 
-      const files = await saveReports(userInput, {
+      const catalog = await collectCommercialSites(f, braveKey, userInput, 100, 20, openKey, extraKw, (info) => {
+        // Optional: Add verbose flag check here if needed, keeping it quiet for now as requested
+      });
+
+      const total = (catalog.competitors?.length || 0) + (catalog.references?.length || 0);
+      if (!total) { console.log('[ETAPA: BUSCA] Sem resultados.'); continue; }
+
+      console.log(`[ETAPA: ANÁLISE] ${catalog.competitors.length} concorrentes identificados. Iniciando processamento paralelo...`);
+
+      // Helper for concurrency
+      const processCompetitor = async (r, i) => {
+        // console.log(`[ETAPA: ANÁLISE] [${i + 1}/${catalog.competitors.length}] Processando: ${r.title}`); // Too verbose?
+        try {
+          const text = await fetchPageText(f, r.url, 8000);
+          const sum = await summarizeCompetitorOffering(f, openKey, userInput, r, text);
+
+          let host = '';
+          try { host = new URL(r.url).hostname.toLowerCase(); } catch { }
+
+          const complaints = await findComplaintsLinks(f, braveKey, r.title || host, host, 20);
+          const enrichedComplaints = [];
+
+          for (const c of complaints) {
+            const cText = await fetchPageText(f, c.url, 6000);
+            const blocked = isBlockedContent(cText) || !cText;
+            const baseText = blocked ? (c.description || c.title || '') : cText;
+            const cSum = await summarizeComplaint(f, openKey, r.title || host, c.url, baseText);
+            enrichedComplaints.push({ ...c, summary: cSum?.summary || '' });
+          }
+
+          console.log(`[ETAPA: ANÁLISE] [${i + 1}/${catalog.competitors.length}] Concluído: ${r.title}`);
+          return { title: r.title, url: r.url, description: r.description, product_service: r.product_service, ...(sum || {}), reclameAqui: enrichedComplaints };
+        } catch (err) {
+          console.error(`[ETAPA: ANÁLISE] [${i + 1}] Erro ao processar ${r.title}:`, err.message);
+          return { title: r.title, url: r.url, error: err.message };
+        }
+      };
+
+      // Concurrency Control
+      const CONCURRENCY_LIMIT = 5;
+      const competitorDetails = [];
+      const queue = [...catalog.competitors];
+      let activeWorkers = 0;
+      let index = 0;
+
+      const worker = async () => {
+        while (queue.length > 0) {
+          const item = queue.shift();
+          const i = index++;
+          const result = await processCompetitor(item, i);
+          competitorDetails.push(result);
+        }
+      };
+
+      const workers = Array(Math.min(CONCURRENCY_LIMIT, queue.length)).fill(null).map(() => worker());
+      await Promise.all(workers);
+
+      // Sort to maintain some order if needed, or just keep as is (async order is random)
+      // competitorDetails.sort((a, b) => ...); // Optional
+
+      console.log('[ETAPA: ANÁLISE] Classificando relevância e removendo duplicatas...');
+      const filteredRefs = await dedupeReferencesByTopic(f, openKey, userInput, catalog.references);
+
+      // Data object for report
+      const reportData = {
         keywordPlan,
         extraKeywords: extraKw,
         competitors: catalog.competitors,
         competitorDetails,
         referencesBefore: catalog.references.length,
         referencesAfter: filteredRefs.length,
-      });
-      console.log('Relatórios salvos:', files);
+      };
+
+      console.log('[ETAPA: GERAÇÃO] Criando narrativas estratégicas (Consultor Sênior)...');
+      const narratives = await generateReportNarrative(f, openKey, userInput, reportData);
+
+      const finalData = { ...reportData, narratives };
+
+      const files = await saveReports(userInput, finalData);
+      console.log(`[ETAPA: GERAÇÃO] Arquivos salvos: JSON e HTML em ${files.json} e ${files.html}`);
+
+      console.log('[ETAPA: GERAÇÃO] Renderizando PDF final...');
+      await renderPdfReport(await readFile(files.html, 'utf8'), files.pdf);
+      console.log(`[ETAPA: CONCLUÍDO] PDF gerado com sucesso: ${files.pdf}`);
 
       const endTime = Date.now();
       const durationMs = endTime - startTime;

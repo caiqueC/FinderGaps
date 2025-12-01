@@ -421,16 +421,31 @@ export async function saveHtmlReport(term, data) {
 }
 
 export async function saveReports(term, data) {
-  const dir = 'reports';
-  await mkdir(dir, { recursive: true });
+  const baseDir = 'reports';
+  const dirs = {
+    json: `${baseDir}/json`,
+    html: `${baseDir}/html`,
+    pdf: `${baseDir}/pdf`
+  };
+
+  await Promise.all(Object.values(dirs).map(d => mkdir(d, { recursive: true })));
+
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const base = `${stamp}_${slugify(term)}`;
+  const slug = slugify(term);
+  const baseName = `${stamp}_${slug}`;
+
   const html = renderHtmlReport({ term, ...data });
-  const htmlPath = `${dir}/${base}.html`;
-  const jsonPath = `${dir}/${base}.json`;
-  await writeFile(htmlPath, html, 'utf8');
-  await writeFile(jsonPath, JSON.stringify({ term, ...data }, null, 2), 'utf8');
-  return { html: htmlPath, json: jsonPath };
+
+  const paths = {
+    html: `${dirs.html}/${baseName}.html`,
+    json: `${dirs.json}/${baseName}.json`,
+    pdf: `${dirs.pdf}/${baseName}.pdf`
+  };
+
+  await writeFile(paths.html, html, 'utf8');
+  await writeFile(paths.json, JSON.stringify({ term, ...data }, null, 2), 'utf8');
+
+  return paths;
 }
 
 export async function renderPdfReport(html, outputPath) {
