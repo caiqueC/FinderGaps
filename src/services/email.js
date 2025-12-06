@@ -28,10 +28,10 @@ export async function sendReportEmail(to, pdfPath, topic, smtpConfig) {
 
     try {
         const info = await transporter.sendMail(mailOptions);
-        console.log('[EMAIL] Relatório enviado com sucesso:', info.messageId);
+        console.log('[EMAIL] Relatório enviado com sucesso! ID:', info.messageId);
         return true;
     } catch (error) {
-        console.error('[EMAIL] Erro ao enviar email:', error.message);
+        console.error('[ERRO] Falha no envio de email:', error.message);
         return false;
     }
 }
