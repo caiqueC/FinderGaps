@@ -7,6 +7,8 @@ import { fetchPageText, isBlockedContent } from '../services/content.js';
 import { saveReports, renderPdfReport } from '../services/report.js';
 import { findComplaintsLinks } from '../services/reclameaqui.js';
 import { braveSearch } from '../services/brave.js';
+import { sendReportEmail } from '../services/email.js';
+
 
 const fetchFn = async () => {
   if (typeof fetch !== 'undefined') return fetch;
@@ -44,6 +46,41 @@ async function main() {
     process.env.OPENROUTER_API_KEY = openKey;
   }
   console.log('OpenRouter API key OK.');
+
+  // Email Config Setup (Optional)
+  let sendEmail = false;
+  let userEmail = '';
+  let smtpConfig = {};
+
+  const wantEmail = (await ask('Deseja receber os relatórios por email? (S/N): ')).trim().toLowerCase();
+  if (wantEmail === 's' || wantEmail === 'sim' || wantEmail === 'y' || wantEmail === 'yes') {
+    sendEmail = true;
+
+    // Check Env
+    smtpConfig = {
+      host: process.env.SMTP_HOST,
+      port: process.env.SMTP_PORT,
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS
+    };
+
+    if (!smtpConfig.host || !smtpConfig.user || !smtpConfig.pass) {
+      console.log('Configurações de SMTP não encontradas no .env (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS).');
+      console.log('Por favor, informe-as agora (apenas para esta sessão):');
+
+      if (!smtpConfig.host) smtpConfig.host = (await ask('SMTP Host (ex: smtp.gmail.com): ')).trim();
+      if (!smtpConfig.port) smtpConfig.port = (await ask('SMTP Port (ex: 587 ou 465): ')).trim();
+      if (!smtpConfig.user) smtpConfig.user = (await ask('SMTP User: ')).trim();
+      if (!smtpConfig.pass) smtpConfig.pass = (await ask('SMTP Password: ')).trim();
+    }
+
+    userEmail = (await ask('Informe o E-MAIL para recebimento do relatório: ')).trim();
+    if (!userEmail) {
+      console.log('Email não informado. O envio de email será ignorado.');
+      sendEmail = false;
+    }
+  }
+
 
   console.log('Busca comercial com Brave. Digite "sair" para encerrar.');
 
@@ -152,6 +189,12 @@ async function main() {
       console.log('[ETAPA: GERAÇÃO] Renderizando PDF final...');
       await renderPdfReport(await readFile(files.html, 'utf8'), files.pdf);
       console.log(`[ETAPA: CONCLUÍDO] PDF gerado com sucesso: ${files.pdf}`);
+
+      if (sendEmail && files.pdf) {
+        console.log('[ETAPA: EMAIL] Enviando relatório...');
+        await sendReportEmail(userEmail, files.pdf, userInput, smtpConfig);
+      }
+
 
       const endTime = Date.now();
       const durationMs = endTime - startTime;

@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "node-fetch": "^3.3.2",
+    "nodemailer": "^7.0.11",
     "puppeteer": "^24.31.0"
   }
 }
