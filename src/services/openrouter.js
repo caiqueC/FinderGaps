@@ -190,15 +190,7 @@ export async function generateReportNarrative(f, openKey, term, data) {
         "indirect_competitors": "Texto...",
         "gaps": "Texto...",
         "conclusion": "Texto..."
-      }
-      
-      Instruções de conteúdo:
-      - idea_elaboration: Texto EXTENSO, aprofundado e envolvente sobre o termo pesquisado. Contextualize o mercado, tendências atuais e por que esse tema é relevante agora. Use storytelling corporativo, mas mantenha um tom PROFISSIONAL e "PÉ NO CHÃO". Evite exageros ou linguagem excessivamente sonhadora.
-      - direct_competitors: Texto narrativo DETALHADO. IMPORTANTE: Sempre que citar o nome de um concorrente, envolva-o em colchetes duplos, assim: [[Nome do Concorrente]]. Use os dados específicos (preços, features, reclamações) que estão no JSON para embasar sua análise. O foco NÃO é julgar os concorrentes, mas sim usar seus modelos para identificar oportunidades de mercado. Mostre o que eles estão deixando passar. Seja específico e estratégico.
-      - indirect_competitors: Texto narrativo sobre soluções alternativas. Envolva nomes de empresas/soluções em [[ ]]. Foque em como essas alternativas deixam espaço para uma nova solução inovadora. Explique POR QUE elas não são suficientes.
-      - gaps: Análise PROFUNDA e EXTENSIVA das lacunas de mercado. Baseie-se nas reclamações reais para identificar o que FALTA no mercado. Não apenas liste os gaps, explique o impacto deles no consumidor e a oportunidade de negócio que eles geram.
-      - conclusion: A síntese final. Deve ser MUITO DETALHADA e VISIONÁRIA, mas REALISTA. Junte a visão da ideia com os gaps identificados para descrever o "Produto Ideal" em detalhes. Como ele deve ser para vencer nesse mercado? Quais features ele deve ter? Qual deve ser o posicionamento? Termine com uma visão inspiradora e estratégica, sem ser piegas.
-      ` },
+      }` },
       { role: 'user', content: `Dados do relatório: ${context}` },
     ];
 
@@ -214,6 +206,123 @@ export async function generateReportNarrative(f, openKey, term, data) {
     return parseJsonLoose(content);
   } catch (e) {
     console.error('Narrative gen error:', e);
+    return null;
+  }
+}
+
+export async function detectScenario(f, openKey, term, competitors, references) {
+  if (!openKey) return 'BLUE_OCEAN'; // Default to scarce data if check fails
+  try {
+    const compCount = competitors.length;
+    // Heuristic first:
+    // High competitors -> Red Ocean
+    if (compCount >= 3) return 'RED_OCEAN';
+
+    // If few competitors, let LLM decide between Blue Ocean (Process/Workaround focus) and Visionary (Future/SciFi)
+    const messages = [
+      { role: 'system', content: 'Responda APENAS JSON: {"scenario":"BLUE_OCEAN"|"VISIONARY"}. Analise o termo/ideia. Se for uma ideia de negócio viável hoje mas sem players claros (ex: um nicho específico, uma ferramenta interna, um serviço local), é "BLUE_OCEAN" (foco em substituir processos manuais/planilhas). Se for algo futurista, sci-fi, que exija invenções tecnológicas não existentes ou mudança drástica de leis (ex: teletransporte, cidade em marte, cura da morte), é "VISIONARY".' },
+      { role: 'user', content: `Termo: ${term}\nConcorrentes diretos encontrados: ${compCount}` },
+    ];
+
+    const resp = await f(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openKey}`, 'X-Title': 'FinderGaps Scenario' },
+      body: JSON.stringify({ model: MODEL, temperature: 0, messages }),
+    });
+
+    if (!resp.ok) return 'BLUE_OCEAN';
+    const data = await resp.json();
+    const content = data?.choices?.[0]?.message?.content || '';
+    const parsed = parseJsonLoose(content);
+    return parsed?.scenario === 'VISIONARY' ? 'VISIONARY' : 'BLUE_OCEAN';
+  } catch {
+    return 'BLUE_OCEAN';
+  }
+}
+
+export async function generateScenarioNarrative(f, openKey, term, data, strategy) {
+  if (!openKey) return null;
+  try {
+    // Determine prompt based on strategy
+    let systemPrompt = '';
+
+    if (strategy === 'RED_OCEAN') {
+      systemPrompt = `Você é um estrategista de mercado "Tubarão".
+      CENÁRIO DETECTADO: MAR VERMELHO (Muitos concorrentes).
+      OBJETIVO: Diferenciação e Roubo de Market Share.
+      
+      Aprofunde-se nas reclamações sobre os concorrentes diretos.
+      "Negative Search Data" contém o que os usuários ODEIAM nos produtos atuais. Use isso.
+      
+      Estrutura do JSON:
+      {
+        "idea_elaboration": "Contexto do mercado saturado...",
+        "direct_competitors": "Analise os players [[Nome]]. Exponha suas fraquezas baseadas nos dados.",
+        "indirect_competitors": "...",
+        "gaps": "As falhas graves dos concorrentes que geram oportunidade.",
+        "conclusion": "O Produto Matador: Como ser 10x melhor que o [[Líder]] corrigindo a falha X."
+      }`;
+    } else if (strategy === 'BLUE_OCEAN') {
+      systemPrompt = `Você é um estrategista de inovação e eficiência.
+      CENÁRIO DETECTADO: MAR AZUL (Poucos/Nenhum concorrente direto. Foco em substituir processos manuais).
+      OBJETIVO: Validação de Dor e Automatização.
+      
+      Não existem grandes SaaS dominantes. O "concorrente" é o Excel, o Papel, o WhatsApp, a burocracia.
+      "Negative Search Data" contém a FRICTION (fricção) dos usuários com o processo atual (workarounds).
+      
+      Estrutura do JSON:
+      {
+        "idea_elaboration": "Por que essa tarefa ainda é manual? Qual o custo do Status Quo?",
+        "direct_competitors": "Não há gigantes. O concorrente é o [[Excel]] ou [[Processo Manual]]. Descreva a dor de fazer isso na mão.",
+        "indirect_competitors": "Ferramentas genéricas usadas de forma adaptada (gambiarras).",
+        "gaps": "A dor da ineficiência. Onde o usuário perde tempo/dinheiro hoje?",
+        "conclusion": "O Primeiro Mover: A ferramenta que automatiza a dor. O MVP ideal."
+      }`;
+    } else { // VISIONARY
+      systemPrompt = `Você é um futurista e analista de deep tech.
+      CENÁRIO DETECTADO: VISIONÁRIO (Conceito futurista/Nicho inexplorado).
+      OBJETIVO: Viabilidade e Roadmap.
+      
+      "Negative Search Data" contém "I wish" (desejos) e frustrações com os limites da física/tecnologia atual.
+      
+      Estrutura do JSON:
+      {
+        "idea_elaboration": "A visão do futuro. O impacto transformador.",
+        "direct_competitors": "Não existem. Cite as barreiras (Física, Regulação).",
+        "indirect_competitors": "Soluções pálidas atuais (ex: Jato vs Teletransporte).",
+        "gaps": "O gap entre o desejo humano e a realidade tecnológica.",
+        "conclusion": "O Salto Quântico: O caminho para tornar isso real. Riscos e potenciais."
+      }`;
+    }
+
+    const fullPrompt = `${systemPrompt}
+    
+    Responda APENAS JSON válido. Escape aspas duplas (\\") no texto.
+    
+    Dados de Entrada:
+    Termo: ${term}
+    Competidores Encontrados: ${data.competitors?.length || 0}
+    Negative Search Data (Reclamações/Dores): ${JSON.stringify(data.negativeData || []).slice(0, 15000)}
+    Detalhes de Concorrentes: ${JSON.stringify(data.competitorDetails || []).slice(0, 5000)}
+    `;
+
+    const messages = [
+      { role: 'system', content: fullPrompt },
+      { role: 'user', content: `Gere o relatório para: ${term}` },
+    ];
+
+    const resp = await f(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openKey}`, 'X-Title': 'FinderGaps Scenario Narrative' },
+      body: JSON.stringify({ model: MODEL, temperature: 0.7, messages }),
+    });
+
+    if (!resp.ok) return null;
+    const respData = await resp.json();
+    const content = respData?.choices?.[0]?.message?.content || '';
+    return parseJsonLoose(content);
+  } catch (e) {
+    console.error('Scenario narrative gen error:', e);
     return null;
   }
 }

@@ -1,13 +1,12 @@
 import readline from 'node:readline';
 import { readFile } from 'node:fs/promises';
 import { loadEnv } from '../services/env.js';
-import { collectCommercialSites, dedupeReferencesByTopic } from '../services/search.js';
-import { API_URL, MODEL, generateKeywordsFromInput, summarizeCompetitorOffering, summarizeComplaint, generateReportNarrative } from '../services/openrouter.js';
-import { fetchPageText, isBlockedContent } from '../services/content.js';
-import { saveReports, renderPdfReport } from '../services/report.js';
-import { findComplaintsLinks } from '../services/reclameaqui.js';
 import { braveSearch } from '../services/brave.js';
 import { sendReportEmail } from '../services/email.js';
+import { runNegativeSearch } from '../services/negative_search.js';
+import { detectScenario, generateScenarioNarrative } from '../services/openrouter.js';
+import { expandSearchForSubstitutes, collectCommercialSites, dedupeReferencesByTopic } from '../services/search.js';
+
 
 
 const fetchFn = async () => {
@@ -105,65 +104,59 @@ async function main() {
       const extraKw = Array.from(new Set([...(keywordPlan.competitor || []), ...(keywordPlan.reference || [])]));
       console.log('[VARREDURA] Explorando o mercado em busca de referências...');
 
-      const catalog = await collectCommercialSites(f, braveKey, userInput, 100, 20, openKey, extraKw, (info) => {
-        // Optional: Add verbose flag check here if needed, keeping it quiet for now as requested
-      });
+      console.log('[VARREDURA] Explorando o mercado em busca de referências...');
+
+      // 1. Initial Broad Search
+      let catalog = await collectCommercialSites(f, braveKey, userInput, 100, 20, openKey, extraKw, (info) => { });
+
+      // 2. Scenario Detection
+      const scenario = await detectScenario(f, openKey, userInput, catalog.competitors, catalog.references);
+      console.log(`[CENÁRIO] Detectado: ${scenario === 'RED_OCEAN' ? 'Mar Vermelho (Alta Concorrência)' : scenario === 'BLUE_OCEAN' ? 'Mar Azul (Dados Escassos/Inovação)' : 'Visionário (Futurista)'}`);
+
+      // 3. Adaptive Search (Blue Ocean Pivot)
+      if (scenario === 'BLUE_OCEAN' && catalog.competitors.length < 3) {
+        console.log('[ADAPTAÇÃO] Buscando soluções substitutas (Excel, Processos Manuais)...');
+        const substitutes = await expandSearchForSubstitutes(f, braveKey, userInput);
+        // Treat substitutes as "Competitors" for analysis purposes
+        for (const sub of substitutes) {
+          catalog.competitors.push({ title: sub.title, url: sub.url, description: sub.description, product_service: 'Solução Substituta (Workaround)' });
+        }
+      }
 
       const total = (catalog.competitors?.length || 0) + (catalog.references?.length || 0);
       if (!total) { console.log('[AVISO] Nenhum resultado relevante encontrado.'); continue; }
 
-      console.log(`[ANÁLISES] ${catalog.competitors.length} concorrentes identificados. Analisando dados...`);
+      console.log(`[ANÁLISES] ${catalog.competitors.length} concorrentes/substitutos identificados. Analisando dados...`);
 
-      // Helper for concurrency
+      // 4. Competitor Analysis (Standard)
       const processCompetitor = async (r, i) => {
-        // console.log(`[ETAPA: ANÁLISE] [${i + 1}/${catalog.competitors.length}] Processando: ${r.title}`); // Too verbose?
         try {
           const text = await fetchPageText(f, r.url, 8000);
           const sum = await summarizeCompetitorOffering(f, openKey, userInput, r, text);
-
-          let host = '';
-          try { host = new URL(r.url).hostname.toLowerCase(); } catch { }
-
-          const complaints = await findComplaintsLinks(f, braveKey, r.title || host, host, 20);
-          const enrichedComplaints = [];
-
-          for (const c of complaints) {
-            const cText = await fetchPageText(f, c.url, 6000);
-            const blocked = isBlockedContent(cText) || !cText;
-            const baseText = blocked ? (c.description || c.title || '') : cText;
-            const cSum = await summarizeComplaint(f, openKey, r.title || host, c.url, baseText);
-            enrichedComplaints.push({ ...c, summary: cSum?.summary || '' });
-          }
-
           console.log(`[ANÁLISES] [${i + 1}/${catalog.competitors.length}] Processado: ${r.title}`);
-          return { title: r.title, url: r.url, description: r.description, product_service: r.product_service, ...(sum || {}), reclameAqui: enrichedComplaints };
+          return { ...r, ...sum };
         } catch (err) {
           console.error(`[ERRO] [${i + 1}] Falha ao processar ${r.title}:`, err.message);
-          return { title: r.title, url: r.url, error: err.message };
+          return { ...r, error: err.message };
         }
       };
 
-      // Concurrency Control
-      const CONCURRENCY_LIMIT = 5;
       const competitorDetails = [];
       const queue = [...catalog.competitors];
-      let activeWorkers = 0;
       let index = 0;
-
       const worker = async () => {
         while (queue.length > 0) {
           const item = queue.shift();
-          const i = index++;
-          const result = await processCompetitor(item, i);
+          const result = await processCompetitor(item, index++);
           competitorDetails.push(result);
         }
       };
+      await Promise.all(Array(Math.min(5, queue.length)).fill(null).map(() => worker()));
 
-      const workers = Array(Math.min(CONCURRENCY_LIMIT, queue.length)).fill(null).map(() => worker());
-      await Promise.all(workers);
-
-      // Sort to maintain some order if needed, or just keep as is (async order is random)
-      // competitorDetails.sort((a, b) => ...); // Optional
+      // 5. Negative Search (Unified & Adaptive)
+      console.log('[INVESTIGAÇÃO] Buscando dores reais e reclamações (Negative Search)...');
+      const negativeData = await runNegativeSearch(f, braveKey, openKey, userInput, scenario, competitorDetails);
+      console.log(`[INSIGHTS] ${negativeData.length} pontos de dor/reclamação identificados.`);
 
       console.log('[FILTRO] Refinando os melhores resultados...');
       const filteredRefs = await dedupeReferencesByTopic(f, openKey, userInput, catalog.references);
@@ -173,16 +166,18 @@ async function main() {
         keywordPlan,
         extraKeywords: extraKw,
         competitors: catalog.competitors,
-        competitorDetails,
+        competitorDetails: competitorDetails.map(c => ({ ...c, reclameAqui: negativeData.filter(n => n.brand === c.title || n.brand === c.host) })), // Map basic brand complaints if any
+        negativeData, // Full negative data (inc. forums/youtube)
         referencesBefore: catalog.references.length,
         referencesAfter: filteredRefs.length,
       };
 
-      console.log('[CRIAÇÃO] Redigindo narrativa estratégica...');
-      const narratives = await generateReportNarrative(f, openKey, userInput, reportData);
+      console.log('[CRIAÇÃO] Redigindo narrativa estratégica (Motor Adaptativo)...');
+      const narratives = await generateScenarioNarrative(f, openKey, userInput, reportData, scenario);
 
-      const finalData = { ...reportData, narratives };
+      const finalData = { ...reportData, narratives, scenario };
 
+      // Saving
       const files = await saveReports(userInput, finalData);
       console.log(`[SALVAR] Relatórios gerados em: ${files.json} e ${files.html}`);
 
@@ -195,16 +190,16 @@ async function main() {
         await sendReportEmail(userEmail, files.pdf, userInput, smtpConfig);
       }
 
-
       const endTime = Date.now();
       const durationMs = endTime - startTime;
       const minutes = Math.floor(durationMs / 60000);
       const seconds = ((durationMs % 60000) / 1000).toFixed(0);
       console.log(`Tempo total do processo: ${minutes}m ${seconds}s`);
     } catch (err) {
-      console.error('Falha ao consultar a Brave API:', err?.message || err);
+      console.error('Falha geral:', err?.message || err);
     }
   }
+
 
   rl.close();
   console.log('Encerrado.');

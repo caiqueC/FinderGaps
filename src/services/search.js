@@ -32,9 +32,9 @@ export async function dedupeReferencesByTopic(f, openKey, term, refs) {
       const res = await topicWithOpenRouter(f, openKey, term, r);
       topic = res.topic;
       relevance = res.relevance;
-    } catch {}
+    } catch { }
     let host = '';
-    try { host = new URL(r?.url || '').hostname.toLowerCase(); } catch {}
+    try { host = new URL(r?.url || '').hostname.toLowerCase(); } catch { }
     const totalRel = Math.max(0, Math.min(1, relevance + brandBoost(host)));
     enriched.push({ ...r, topic, relevance: totalRel });
   }
@@ -57,11 +57,11 @@ export function classifyHeuristic(term, r) {
   const d = (r?.description || '').toLowerCase();
   const u = (r?.url || '').toLowerCase();
   let path = '';
-  try { path = new URL(r?.url || '').pathname.toLowerCase(); } catch {}
-  const compWords = ['pricing','plans','planos','preço','product','produto','solutions','platform','features','signup','demo','free trial','start','buy','contact sales'];
-  const refWords = ['what is','o que é','guide','guia','tutorial','blog','wiki','wikipedia','docs','documentation','learn','resources','how to','overview','case study','whitepaper'];
-  const compPath = ['/pricing','/plans','/planos','/product','/products','/solutions','/platform','/features','/signup','/demo'];
-  const refPath = ['/blog','/learn','/resources','/docs','/wiki'];
+  try { path = new URL(r?.url || '').pathname.toLowerCase(); } catch { }
+  const compWords = ['pricing', 'plans', 'planos', 'preço', 'product', 'produto', 'solutions', 'platform', 'features', 'signup', 'demo', 'free trial', 'start', 'buy', 'contact sales'];
+  const refWords = ['what is', 'o que é', 'guide', 'guia', 'tutorial', 'blog', 'wiki', 'wikipedia', 'docs', 'documentation', 'learn', 'resources', 'how to', 'overview', 'case study', 'whitepaper'];
+  const compPath = ['/pricing', '/plans', '/planos', '/product', '/products', '/solutions', '/platform', '/features', '/signup', '/demo'];
+  const refPath = ['/blog', '/learn', '/resources', '/docs', '/wiki'];
   const isComp = compWords.some((w) => t.includes(w) || d.includes(w) || u.includes(w)) || compPath.some((p) => path.includes(p));
   const isRef = refWords.some((w) => t.includes(w) || d.includes(w) || u.includes(w)) || refPath.some((p) => path.includes(p));
   if (isComp) return 'competitor';
@@ -89,18 +89,18 @@ export async function collectCommercialSites(f, braveKey, term, maxDomains = 100
     let results = [];
     try {
       results = await braveSearch(f, braveKey, v, maxResultsPerVariant);
-    } catch {}
+    } catch { }
     results = results.filter((r) => {
       const u = (r?.url || '').toLowerCase();
       let host = '';
-      try { host = new URL(u).hostname.toLowerCase(); } catch {}
+      try { host = new URL(u).hostname.toLowerCase(); } catch { }
       if (!host) return false;
       const tldBlocked = blockedTlds.some((s) => host.endsWith(s));
       return !tldBlocked;
     });
     for (const r of results) {
       let host = '';
-      try { host = new URL(r?.url || '').hostname.toLowerCase(); } catch {}
+      try { host = new URL(r?.url || '').hostname.toLowerCase(); } catch { }
       if (!host || seenHosts.has(host)) continue;
       seenHosts.add(host);
       domains.push({ host, title: r?.title || '', description: r?.description || '', url: r?.url || '' });
@@ -122,7 +122,7 @@ export async function collectCommercialSites(f, braveKey, term, maxDomains = 100
         const res = await classifyWithOpenRouter(f, openKey, term, baseItem);
         label = res.label;
         product_service = res.product_service;
-      } catch {}
+      } catch { }
     } else {
       label = classifyHeuristic(term, baseItem);
     }
@@ -139,4 +139,88 @@ export async function collectCommercialSites(f, braveKey, term, maxDomains = 100
     onProgress({ event: 'classified', competitors: competitors.length, references: references.length });
   }
   return { competitors, references };
+}
+
+export async function expandSearchForSubstitutes(f, braveKey, term) {
+  // Pivot: Search for the "Process" not the "Product"
+  // e.g. "manual control of [term]", "excel template for [term]", "how to do [term] in excel"
+  const queries = [
+    `template excel ${term}`,
+    `planilha ${term} grátis`,
+    `como fazer ${term} manualmente`,
+    `alternativa para fazer ${term}`,
+    `melhor forma de controlar ${term}`,
+    `manual process for ${term}`,
+    `spreadsheet for ${term}`
+  ];
+
+  const results = [];
+  for (const q of queries) {
+    try {
+      // 5 results per query is enough to find the "Substitutes" (Excel, Templates, Blogs)
+      const res = await braveSearch(f, braveKey, q, 5);
+      results.push(...res);
+    } catch { }
+  }
+
+  // Dedup
+  const unique = [];
+  const seen = new Set();
+  for (const r of results) {
+    if (!seen.has(r.url)) {
+      seen.add(r.url);
+      unique.push(r);
+    }
+  }
+  return unique.slice(0, 15);
+}
+
+export async function searchYouTube(f, braveKey, term) {
+  // Search for "How to" or "Problems" videos
+  const queries = [
+    `site:youtube.com ${term} tutorial`,
+    `site:youtube.com como fazer ${term}`,
+    `site:youtube.com problema ${term}`,
+    `site:youtube.com ${term} workaround`,
+    `site:youtube.com ${term} gambiarra`
+  ];
+
+  const results = [];
+  for (const q of queries) {
+    try {
+      const res = await braveSearch(f, braveKey, q, 5);
+      results.push(...res);
+    } catch { }
+  }
+  return results.map(r => ({
+    title: r.title,
+    url: r.url,
+    description: r.description,
+    source: 'YouTube'
+  })).slice(0, 10);
+}
+
+export async function searchForums(f, braveKey, term) {
+  // Target Reddit, Quora, etc.
+  const queries = [
+    `site:reddit.com ${term} pain`,
+    `site:reddit.com ${term} slow`,
+    `site:reddit.com ${term} hate`,
+    `site:quora.com ${term} difficult`,
+    `forum ${term} problema`
+  ];
+
+  const results = [];
+  for (const q of queries) {
+    try {
+      const res = await braveSearch(f, braveKey, q, 5);
+      results.push(...res);
+    } catch { }
+  }
+  return results.map(r => ({
+    title: r.title,
+    url: r.url,
+    description: r.description,
+    source: 'Forum'
+  })).slice(0, 10);
 }
