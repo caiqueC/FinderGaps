@@ -220,13 +220,26 @@ export function renderHtmlReport({ term, keywordPlan, extraKeywords, competitors
   // Helper to format text
   const formatText = (text) => {
     if (!text) return '';
-    // First escape HTML to prevent XSS
+    // First escape HTML to prevent XSS (but we will unescape some safe tags later or handle via regex replacement on raw text first?)
+    // Actually, safer to escape first, then applying formatting replacements on the escaped string.
     let safe = htmlEscape(text);
-    // Then replace [[Name]] with <b><i>Name</i></b>
-    // We need to unescape the brackets first if htmlEscape touched them, but htmlEscape usually escapes < > & " '
-    // [ ] are usually safe, but let's be careful.
-    // If htmlEscape doesn't escape [ ], we can just replace.
-    return safe.replace(/\[\[(.*?)\]\]/g, '<b><i>$1</i></b>');
+
+    // Replace [[Name]] with <b><i>Name</i></b>
+    safe = safe.replace(/\[\[(.*?)\]\]/g, '<b><i>$1</i></b>');
+
+    // Replace **Bold** with <b>Bold</b>
+    safe = safe.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+
+    // Replace * Italic * with <i>Italic</i> (careful not to match list items)
+    // We can handle simple *word* or *phrase*
+    safe = safe.replace(/(?<!\*)\*(?!\s)(.*?)(?<!\s)\*(?!\*)/g, '<i>$1</i>');
+
+    // Handle bullet points (lines starting with * or -)
+    // Since we are rendering inside a div, we can't easily make <ul>. 
+    // We can replace leading * with &bull; and a break.
+    safe = safe.replace(/^[\*\-]\s+(.*)$/gm, '<br>&bull; $1');
+
+    return safe;
   };
 
   // Data Preparation
@@ -448,22 +461,60 @@ export async function saveReports(term, data) {
   return paths;
 }
 
-export async function renderPdfReport(html, outputPath) {
+let sharedBrowser = null;
+
+export async function getBrowser() {
+  if (sharedBrowser) return sharedBrowser;
+
   const puppeteer = (await import('puppeteer')).default;
-  const browser = await puppeteer.launch({ headless: 'new' });
-  const page = await browser.newPage();
-  await page.setContent(html, { waitUntil: 'networkidle0' });
-  // Added margins to fix text alignment issues on page breaks
-  await page.pdf({
-    path: outputPath,
-    format: 'A4',
-    printBackground: true,
-    margin: {
-      top: '20mm',
-      right: '15mm',
-      bottom: '20mm',
-      left: '15mm'
+  const wsEndpoint = process.env.BROWSER_WS_ENDPOINT;
+
+  if (wsEndpoint) {
+    console.log('[PUPPETEER] Conectando ao Browserless/Remote...');
+    sharedBrowser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
+  } else {
+    // console.log('[PUPPETEER] Iniciando instância local...'); // Verbose
+    sharedBrowser = await puppeteer.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox'] // Recommended for docker/serverless environments
+    });
+  }
+  return sharedBrowser;
+}
+
+export async function closeBrowser() {
+  if (sharedBrowser) {
+    await sharedBrowser.close();
+    sharedBrowser = null;
+  }
+}
+
+export async function renderPdfReport(html, outputPath) {
+  try {
+    const browser = await getBrowser();
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+
+    await page.pdf({
+      path: outputPath,
+      format: 'A4',
+      printBackground: true,
+      margin: {
+        top: '20mm',
+        right: '15mm',
+        bottom: '20mm',
+        left: '15mm'
+      }
+    });
+
+    await page.close();
+  } catch (err) {
+    console.error('Erro ao gerar PDF:', err);
+    // If browser crashed, reset it so next try re-launches
+    if (sharedBrowser) {
+      try { await sharedBrowser.close(); } catch { }
+      sharedBrowser = null;
     }
-  });
-  await browser.close();
+    throw err;
+  }
 }

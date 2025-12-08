@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 
 function getHtmlTemplate(topic) {
-    return `
+  return `
 <!DOCTYPE html>
 <html>
 <head>
@@ -44,38 +44,38 @@ function getHtmlTemplate(topic) {
 }
 
 export async function sendReportEmail(to, pdfPath, topic, smtpConfig) {
-    if (!to || !pdfPath) return;
+  if (!to || !pdfPath) return;
 
-    const transporter = nodemailer.createTransport({
-        host: smtpConfig.host,
-        port: smtpConfig.port,
-        secure: smtpConfig.port == 465, // true for 465, false for other ports
-        auth: {
-            user: smtpConfig.user,
-            pass: smtpConfig.pass,
-        },
-    });
+  const transporter = nodemailer.createTransport({
+    host: smtpConfig.host,
+    port: smtpConfig.port,
+    secure: smtpConfig.port == 465, // true for 465, false for other ports
+    auth: {
+      user: smtpConfig.user,
+      pass: smtpConfig.pass,
+    },
+  });
 
-    const mailOptions = {
-        from: `"Plan Genie" <${smtpConfig.user}>`,
-        to: to,
-        subject: `Seu Relatório de Mercado: ${topic.substring(0, 50)}...`,
-        text: `Seu relatório sobre "${topic}" está pronto e anexado.`,
-        html: getHtmlTemplate(topic),
-        attachments: [
-            {
-                filename: `PlanGenie_Report.pdf`,
-                path: pdfPath,
-            },
-        ],
-    };
+  const mailOptions = {
+    from: `"Plan Genie" <${smtpConfig.user}>`,
+    to: to,
+    subject: `Seu Relatório de Mercado: ${topic.substring(0, 50)}...`,
+    text: `Seu relatório sobre "${topic}" está pronto e anexado.`,
+    html: getHtmlTemplate(topic),
+    attachments: [
+      {
+        filename: `PlanGenie_Report${pdfPath.endsWith('.zip') ? '.zip' : '.pdf'}`,
+        path: pdfPath,
+      },
+    ],
+  };
 
-    try {
-        const info = await transporter.sendMail(mailOptions);
-        console.log('[EMAIL] Relatório enviado com sucesso! ID:', info.messageId);
-        return true;
-    } catch (error) {
-        console.error('[ERRO] Falha no envio de email:', error.message);
-        return false;
-    }
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log('[EMAIL] Relatório enviado com sucesso! ID:', info.messageId);
+    return true;
+  } catch (error) {
+    console.error('[ERRO] Falha no envio de email:', error.message);
+    return false;
+  }
 }

@@ -5,11 +5,17 @@
   "type": "module",
   "description": "CLI simples para conversar com IA via OpenRouter (Gemini 2.5 mini)",
   "scripts": {
-    "start": "node src/app/cli.js"
+    "start": "node src/app/cli.js",
+    "serve": "node src/server.js"
   },
   "dependencies": {
+    "archiver": "^7.0.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
     "node-fetch": "^3.3.2",
     "nodemailer": "^7.0.11",
-    "puppeteer": "^24.31.0"
+    "puppeteer": "^24.31.0",
+    "stripe": "^20.0.0"
   }
 }

@@ -4,16 +4,13 @@ import { loadEnv } from '../services/env.js';
 import { braveSearch } from '../services/brave.js';
 import { sendReportEmail } from '../services/email.js';
 import { runNegativeSearch } from '../services/negative_search.js';
-import { detectScenario, generateScenarioNarrative } from '../services/openrouter.js';
+import { saveReports, renderPdfReport, closeBrowser } from '../services/report.js';
+import { findComplaintsLinks } from '../services/reclameaqui.js';
 import { expandSearchForSubstitutes, collectCommercialSites, dedupeReferencesByTopic } from '../services/search.js';
 
 
 
-const fetchFn = async () => {
-  if (typeof fetch !== 'undefined') return fetch;
-  const mod = await import('node-fetch');
-  return mod.default;
-};
+import { fetchFn } from '../services/fetch.js';
 
 async function main() {
   console.log('Inicializando...');
@@ -201,7 +198,9 @@ async function main() {
   }
 
 
+
   rl.close();
+  await closeBrowser();
   console.log('Encerrado.');
 }
 
