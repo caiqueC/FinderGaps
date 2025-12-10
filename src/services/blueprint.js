@@ -292,7 +292,7 @@ export function renderBlueprintHtml(term) {
                 <strong>Isso é uma meia-verdade perigosa.</strong>
             </p>
             <p>
-                A tecnologia evoluiu, sim. Hoje, uma pessoa sozinha tem o poder de fodo de uma equipe de 20 engenheiros de dez anos atrás. Mas poder sem controle não cria produtos; cria caos.
+                A tecnologia evoluiu, sim. Hoje, uma pessoa sozinha tem o poder de fogo de uma equipe de 20 engenheiros de dez anos atrás. Mas poder sem controle não cria produtos; cria caos.
                 O Plan Genie não está aqui para te vender um sonho impossível. Estamos aqui para te dar um <strong>Método</strong>.
             </p>
             <p>
@@ -306,8 +306,10 @@ export function renderBlueprintHtml(term) {
                 </p>
             </div>
             <p style="font-size: 0.95rem; margin-top: 20px;">
-                <strong>O que isso significa na prática?</strong><br> Imagine que a IA é uma Ferrari. Se você não souber o caminho (o processo) e não souber dirigir (os conceitos básicos), acelerar fundo só fará você bater no muro mais rápido.
-                Neste documento, nós não te damos apenas o carro; nós ensinamos a traçar a rota, verificar o motor e pilotar com segurança até o destino. As ferramentas que citamos (Claude, ClickUp, Trae) são apenas sugestões atuais; o <strong>Processo</strong> é eterno.
+                <strong>O que isso significa na prática?</strong><br> 
+                Imagine que a IA é uma equipe de construtores com supervelocidade, mas que seguem ordens cegamente. Se você entregar a eles uma planta (o Processo) com as paredes tortas, eles levantarão o prédio torto em segundos — e ele cairá na sua cabeça logo em seguida.
+                A IA não corrige processos ruins; ela os acelera. Se o seu processo de decisão for confuso, a IA vai gerar confusão em escala industrial.
+                Neste documento, nós te ensinamos a desenhar a planta correta. As ferramentas mudam, mas a lógica de construção sólida é eterna.
             </p>
         </section>
     </div>
@@ -319,6 +321,11 @@ export function renderBlueprintHtml(term) {
                 <span class="section-num">01</span>
                 <h2 class="section-title">Glossário & Fundamentos</h2>
             </div>
+            <div class="warning-box" style="margin-top: 0; margin-bottom: 30px; padding: 15px;">
+                <p style="margin:0; font-size: 0.9rem;">
+                    <strong>Importante:</strong> As explicações abaixo são simplificações para dar contexto. Recomendamos fortemente que você <strong>pesquise a fundo</strong> não apenas os termos descritos aqui, mas qualquer palavra ou conceito técnico que você não entenda completamente ao longo destes dois documentos. A verdadeira autonomia vem da curiosidade incansável.
+                </p>
+            </div>
             <p>
                 Para comandar essa nova força de trabalho digital, você precisa aprender o idioma dela. Não vamos falar "tech-ês" complicado, vamos usar analogias para solidificar o entendimento.
             </p>
@@ -326,7 +333,7 @@ export function renderBlueprintHtml(term) {
             <div class="glossary-item">
                 <span class="glossary-term">LLM (Large Language Model)</span>
                 <span class="glossary-def">É o "cérebro" incorpóreo. Pense nele como um gênio numa lâmpada muito inteligente, mas que não tem mãos. Ele sabe tudo o que está na internet até a data de seu treinamento, mas não consegue "tocar" no seu computador.</span>
-                <span class="glossary-exa">Exemplos: Claude 3.5 Sonnet, GPT-4o, Gemini 1.5 Pro.</span>
+                <span class="glossary-exa">Recomendações: Claude 3.5 Sonnet (ou 4.5 quando disponível), Gemini 1.5 Pro (ou 3.0). Use sempre o modelo mais inteligente disponível.</span>
             </div>
 
             <div class="glossary-item">
@@ -383,7 +390,7 @@ export function renderBlueprintHtml(term) {
                     <div class="arrow">${iconArrowDown}</div>
                     <div class="box">
                         <strong>3. O Arquiteto (Tech Lead 1)</strong><br>
-                        <span style="font-size:0.9em; font-weight:400;">Ferramenta: Claude (Web) + MCP ClickUp</span><br>
+                        <span style="font-size:0.9em; font-weight:400;">Ferramenta: Claude (Desktop) + MCP ClickUp</span><br>
                         <span style="font-size:0.8em; color:#666;">Entrega: O Canteiro de Obras (Tasks Organizadas)</span>
                     </div>
                     <div class="arrow">${iconArrowDown}</div>
@@ -462,13 +469,13 @@ Gere um documento estruturado. Se possível, estruture em Markdown para fácil l
                 Agora temos a Planta Baixa (Funcional). Precisamos de um Engenheiro Civil para decidir os materiais e organizar a equipe de construção.
             </p>
             <p>
-                Nesta etapa, o Tech Lead (ainda no Claude/Navegador) vai configurar seu sistema de gestão. <strong>Não pule isso.</strong> Tentar codar sem tarefas definidas é a receita para o "Spaghetti Code".
+                Nesta etapa, o Tech Lead deve usar o <strong>Claude Desktop App</strong> (ou uma IDE) para ter acesso ao MCP. IAs via navegador web geralmente não acessam MCPs locais por segurança.
             </p>
 
             <h3>Passo C: Configuração e MCP</h3>
             <ol>
-                <li>Inicie um <strong>NOVO CHAT</strong> (Contexto Limpo).</li>
-                <li>Conecte o <strong>MCP do ClickUp</strong> (ou Trello/Jira).</li>
+                <li>Abra o <strong>Claude Desktop App</strong> ou sua IDE.</li>
+                <li>Conecte o <strong>MCP do ClickUp</strong> (ou do gerenciador de sua escolha).</li>
                 <li>Anexe a "Bíblia Funcional" que o PO criou no passo anterior.</li>
             </ol>
 
@@ -506,14 +513,14 @@ EXECUTE AGORA.
                 <h2 class="section-title">A Fábrica (IDE)</h2>
             </div>
             <p>
-                Chegamos ao coração da operação. Saímos do navegador e entramos na IDE (Trae, Cursor, etc). Aqui a mágica acontece, mas ela precisa de regras rígidas.
+                Chegamos ao coração da operação. Saímos do navegador e entramos na IDE (Trae, Cursor, etc). Aqui a mágica acontece, mas ela precisa de regras rígidas para não sair do controle.
             </p>
             <p>
                 Você vai configurar um Agente na sua IDE. Diferente do chat do navegador, este agente tem acesso aos seus arquivos locais E ao ClickUp.
             </p>
 
             <h3>Passo E: O Prompt do "Operário Padrão" (Dev)</h3>
-            <p>Cole isso nas "Rules" ou "System Prompt" do seu Agente na IDE. Este prompt ensina a ele ética de trabalho e priorização.</p>
+            <p>Cole isso nas "Rules" ou "System Prompt" do seu Agente na IDE. Este prompt ensina a ele ética de trabalho e priorização em ciclo único.</p>
             
             <div class="code-block" style="font-size: 0.8rem;">
 IDENTITY:
@@ -522,7 +529,7 @@ Você é o Desenvolvedor Full-Stack Sênior deste projeto.
 FERRAMENTAS:
 Você tem acesso ao Filesystem (para codar) e ao ClickUp (para saber o que fazer).
 
-ALGORITMO DE TRABALHO (Loop Infinito):
+ALGORITMO DE TRABALHO (Ciclo Único - Execute APENAS UMA vez):
 
 1. CHECK PRIORIDADE 'CRÍTICA' (Status: To Fix):
    - Vá ao ClickUp. Existe algo em 'To Fix'?
@@ -541,12 +548,13 @@ DEFINIÇÃO DE PRONTO (DoD):
 - O código roda?
 - Seguiu os requisitos?
 - Mova a task para 'To Review'.
-- Comente: "Pronto para análise".
+- Comente: "Pronto para análise. Notas do Dev: [Liste aqui qualquer dificuldade, dúvida técnica ou decisão de design que precise de atenção do Tech Lead]."
 - NÃO FAÇA COMMIT NA MAIN AINDA.
+- AGUARDE novas instruções.
             </div>
             
             <p>
-                Com esse prompt, você só precisa dizer "Trabalhe" no chat da IDE. O Agente vai automaticamente buscar a task, executar e pedir revisão.
+                Com esse prompt, você só precisa dizer "Trabalhe" no chat da IDE. O Agente vai buscar UMA task, executar e pedir revisão. Ele não deve entrar em loop infinito.
             </p>
         </section>
     </div>
@@ -562,12 +570,12 @@ DEFINIÇÃO DE PRONTO (DoD):
                 Aqui está o segredo que separa amadores de profissionais. Amadores confiam cegamente no código da IA. Profissionais revisam.
             </p>
             <p>
-                Como você (talvez) não saiba ler código, usaremos a própria IA para revisar a si mesma, mas num papel diferente. Isso quebra o viés de confirmação.
+                Como você (talvez) não saiba ler código, usaremos a própria IA para revisar a si mesma, mas num papel diferente. Isso quebra o viés de confirmação e garante qualidade.
             </p>
 
             <h3>Passo F: O Ciclo de Revisão</h3>
             <p>
-                Quando o Dev disser "Pronto para análise" e mover a task para <strong>To Review</strong>, você muda de "Persona" no chat da IDE (ou abre um novo chat na IDE) e roda este prompt:
+                Quando o Dev disser "Pronto para análise" e mover a task para <strong>To Review</strong>, você muda de "Persona" na IDE e roda este prompt:
             </p>
 
             <div class="code-block">
@@ -582,18 +590,27 @@ AÇÃO:
    - ANÁLISE DE SEGURANÇA: Há senhas expostas? Há loops infinitos? O código está sujo?
 
 VEREDITO:
-- Se estiver RUIM: Mova para 'To Fix'. Escreva um comentário no ClickUp explicando EXATAMENTE o que o Dev deve corrigir. (O Dev vai pegar isso no próximo loop).
+- Se estiver RUIM: Mova para 'To Fix'. Escreva um comentário no ClickUp explicando EXATAMENTE o que o Dev deve corrigir.
 - Se estiver BOM: Mova para 'Done'. (Opcional: Faça o commit no git: "feat: task X concluída").
             </div>
 
-            <div class="quote-box" style="margin-top: 40px; border-left-color: #000; background: #fff; border: 2px solid #333;">
-                <p style="font-weight: 700; margin-bottom: 10px; font-size: 1.1rem;">Conclusão: A Autonomia Real</p>
-                <p style="margin:0;">
-                    Percebeu o que fizemos? Montamos uma empresa inteira dentro do seu computador.<br><br>
+            <div class="quote-box" style="margin-top: 30px; border-left-color: #000; background: #fff; border: 2px solid #333;">
+                <p style="font-weight: 700; margin-bottom: 15px; font-size: 1.1rem;">Conclusão Final: Autonomia e Evolução</p>
+                
+                <strong style="display:block; margin-bottom:5px;">A Empresa de Uma Pessoa Só</strong>
+                <p style="margin-top:0;">
+                    Percebeu o que fizemos? Montamos uma empresa inteira dentro do seu computador.
                     Você tem o Visionário (Você/BA), o Tradutor (PO), o Arquiteto, o Operário (Dev) e o Auditor (Revisor).
-                    Sua função deixou de ser "escrever código" e passou a ser "gerenciar o fluxo".<br><br>
-                    Se o Dev erra, o Revisor pega. Se o Arquiteto planeja mal, o Dev trava e te avisa.
-                    Este sistema se auto-corrige. É assim que se constrói software sólido no século 21.
+                    Sua função deixou de ser "escrever código" e passou a ser "gerenciar o fluxo". 
+                    Se o Dev erra, o Revisor pega. Se o sistema engasga, o Arquiteto ajusta. 
+                    Este ecossistema digital é o que te permite construir como um time de dez.
+                </p>
+
+                <strong style="display:block; margin-bottom:5px; margin-top:20px;">A Evolução Contínua</strong>
+                <p style="margin-top:0;">
+                    Este Blueprint é apenas o seu "Ponto Zero". As tecnologias de IA evoluem semanalmente (novos MCPs, novos modelos, novos agentes).
+                    O que te entregamos aqui é uma base sólida e testada. Porém, o verdadeiro poder está em suas mãos para adaptar e evoluir este processo. 
+                    Sinta-se livre para criar novos agentes e testar novos fluxos. O limite não é mais técnico; é a sua imaginação.
                 </p>
             </div>
         </section>
