@@ -175,7 +175,7 @@ export async function runAnalysis(prompt, options = {}) {
 
         // 9. Generate Blueprint
         log('Gerando Blueprint de Produto...', 'info');
-        const blueprintHtml = renderBlueprintHtml();
+        const blueprintHtml = renderBlueprintHtml(userInput);
         const blueprintPath = files.pdf.replace('.pdf', '_Blueprint.pdf');
         await renderPdfReport(blueprintHtml, blueprintPath);
 
