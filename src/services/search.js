@@ -85,7 +85,12 @@ export async function collectCommercialSites(f, braveKey, term, maxDomains = 100
   }
   const seenHosts = new Set();
   const domains = [];
+  let variantsProcessed = 0;
   for (const v of variants) {
+    variantsProcessed++;
+    if (typeof onProgress === 'function') {
+      onProgress({ event: 'searching_variant', query: v, current: variantsProcessed, total: variants.length });
+    }
     let results = [];
     try {
       results = await braveSearch(f, braveKey, v, maxResultsPerVariant);

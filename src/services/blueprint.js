@@ -275,7 +275,6 @@ export function renderBlueprintHtml(term) {
         <div>
             <h1>Blueprint de<br>Produto</h1>
             <p style="color: rgba(255,255,255,0.7); text-align: center; margin-top: 10px;">Guia Tático de Implementação e Autonomia</p>
-            ${term ? `<div class="term-highlight">${term}</div>` : ''}
         </div>
         <div class="cover-footer">Plan Genie Framework v2.0 - Product Blueprint</div>
     </div>
@@ -592,6 +591,14 @@ AÇÃO:
 VEREDITO:
 - Se estiver RUIM: Mova para 'To Fix'. Escreva um comentário no ClickUp explicando EXATAMENTE o que o Dev deve corrigir.
 - Se estiver BOM: Mova para 'Done'. (Opcional: Faça o commit no git: "feat: task X concluída").
+            </div>
+
+            <div class="warning-box" style="margin-top: 20px; padding: 15px; border-color: #666; background: #fafafa;">
+                <p style="margin:0; font-size: 0.9rem;">
+                    <strong>⚠️ Importante:</strong> Sempre confira no ClickUp se o Agente <strong>realmente</strong> moveu o card e deixou o comentário. 
+                    IAs podem "alucinar" que realizaram a ação no MCP quando, na verdade, houve um erro silencioso. 
+                    <strong>Sua supervisão visual é a única garantia.</strong>
+                </p>
             </div>
 
             <div class="quote-box" style="margin-top: 30px; border-left-color: #000; background: #fff; border: 2px solid #333;">

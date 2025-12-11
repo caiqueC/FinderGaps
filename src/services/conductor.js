@@ -32,12 +32,13 @@ export async function runAnalysis(prompt, options = {}) {
     };
 
     const startTime = Date.now();
-    const estMinutes = await getFormattedAverage();
-    if (estMinutes > 0) {
-        log(`Tempo estimado: ~${estMinutes} minutos (baseado no histórico).`, 'info');
-    } else {
-        log(`Calculando estimativa de tempo inicial...`, 'info');
-    }
+    // Tempo estimado desativado temporariamente em favor de texto estático no frontend (15min)
+    // const estMinutes = await getFormattedAverage();
+    // if (estMinutes > 0) {
+    //    log(`Tempo estimado: ~${estMinutes} minutos (baseado no histórico).`, 'info');
+    // } else {
+    //    log(`Calculando estimativa de tempo inicial...`, 'info');
+    // }
 
     log(`Iniciando análise para: ${prompt}`);
 
@@ -94,7 +95,18 @@ export async function runAnalysis(prompt, options = {}) {
 
         // 2. Initial Broad Search
         let catalog = await collectCommercialSites(f, braveKey, userInput, 100, 20, openKey, extraKw, (info) => {
-            // Optional: finer grained logging from search
+            if (info.event === 'variants') {
+                log(`Estratégia definida: Investigando ${info.count} ângulos de busca...`, 'info');
+            } else if (info.event === 'searching_variant') {
+                // Log only every 3rd variant to avoid spamming the UI too much, or if it's the last one
+                if (info.current % 3 === 0 || info.current === info.total) {
+                    log(`Varrendo setor: "${info.query}" (${info.current}/${info.total})...`, 'info');
+                }
+            } else if (info.event === 'domains') {
+                log(`Scanner concluído: ${info.count} sites candidatos encontrados.`, 'success');
+            } else if (info.event === 'classified') {
+                log(`Classificação de IA: ${info.competitors} concorrentes diretos e ${info.references} referências.`, 'info');
+            }
         });
 
         // 3. Scenario Detection
@@ -181,7 +193,11 @@ export async function runAnalysis(prompt, options = {}) {
 
         // 10. Create ZIP
         log('Empacotando Kit Plan Genie...', 'info');
-        const zipPath = files.pdf.replace('.pdf', '_Kit.zip');
+
+        // Cleaner "Raw" filename
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const zipPath = resolve(files.pdf.replace(files.pdf.split('/').pop(), `PlanGenie_Export_RAW_${timestamp}.zip`));
+
         const output = createWriteStream(zipPath);
         const archive = archiver('zip', { zlib: { level: 9 } });
 
@@ -192,8 +208,11 @@ export async function runAnalysis(prompt, options = {}) {
             output.on('close', resolve);
             archive.on('error', reject);
             archive.pipe(output);
-            archive.file(absPdfPath, { name: 'Estudo_de_Mercado_PlanGenie.pdf' });
-            archive.file(absBlueprintPath, { name: 'Blueprint_de_Produto_PlanGenie.pdf' });
+
+            // Numbered files for clear reading flow
+            archive.file(absPdfPath, { name: '01_LEIA_PRIMEIRO_Diagnostico_de_Mercado.pdf' });
+            archive.file(absBlueprintPath, { name: '02_EXECUCAO_Blueprint_Tatico.pdf' });
+
             archive.finalize();
         });
 
