@@ -75,3 +75,37 @@ export async function saveReport(leadId, { prompt, reportData, zipPath }) {
         console.error('[SUPABASE] Unexpected error saving report:', err);
     }
 }
+
+/**
+ * Finds the latest report for a given email.
+ * @param {string} email
+ * @returns {Promise<{id: string, zip_path: string, prompt: string}|null>}
+ */
+export async function findLatestReportByEmail(email) {
+    if (!email) return null;
+
+    try {
+        // 1. Get Lead ID
+        const { data: lead } = await supabase
+            .from('leads')
+            .select('id')
+            .eq('email', email)
+            .single();
+
+        if (!lead) return null;
+
+        // 2. Get Latest Report
+        const { data: report } = await supabase
+            .from('reports')
+            .select('id, zip_path, prompt, created_at')
+            .eq('lead_id', lead.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        return report;
+    } catch (err) {
+        console.error('[SUPABASE] Error finding latest report:', err);
+        return null;
+    }
+}
