@@ -16,6 +16,7 @@ import { runNegativeSearch } from './negative_search.js';
 import { fetchPageText } from './content.js';
 import { saveReports, renderPdfReport } from './report.js';
 import { sendReportEmail } from './email.js';
+import { saveLead, saveReport } from './supabase.js';
 import archiver from 'archiver';
 import { createWriteStream } from 'node:fs';
 import { renderBlueprintHtml } from './blueprint.js';
@@ -25,13 +26,25 @@ import { getFormattedAverage, saveRunTime } from './tracker.js';
 // Polyfill removed, using import from cli.js
 
 export async function runAnalysis(prompt, options = {}) {
-    // Helper to log to both console and callback
+    // Options: email, onLog, onProgress
+    const { email: userEmail, onLog } = options;
     const log = (msg, type = 'info') => {
+        if (onLog) onLog({ message: msg, type });
         console.log(`[CONDUCTOR] ${msg}`);
-        if (options.onLog) options.onLog({ text: msg, type });
     };
 
+    // 1. Save Lead (Fire-and-forget or await? Fast enough to await to get ID)
+    let leadId = null;
+    if (userEmail) {
+        saveLead(userEmail).then(id => {
+            leadId = id;
+            if (id) console.log(`[SUPABASE] Lead tracked: ${id}`);
+        });
+    }
+
     const startTime = Date.now();
+    log(`Iniciando análise para: ${prompt.substring(0, 50)}...`);
+    log('Iniciando a pesquisa de mercado...');
     // Tempo estimado desativado temporariamente em favor de texto estático no frontend (15min)
     // const estMinutes = await getFormattedAverage();
     // if (estMinutes > 0) {
@@ -215,6 +228,15 @@ export async function runAnalysis(prompt, options = {}) {
 
             archive.finalize();
         });
+
+        // 11. Save to Supabase (Background)
+        if (leadId) {
+            saveReport(leadId, {
+                prompt: userInput,
+                reportData: { ...reportData, narratives }, // Full JSON data
+                zipPath: zipPath
+            });
+        }
 
         if (sendEmail && zipPath) {
             log(`Iniciando envio de email em segundo plano para ${userEmail}...`, 'info');
