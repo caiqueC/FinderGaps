@@ -217,19 +217,16 @@ export async function runAnalysis(prompt, options = {}) {
         });
 
         if (sendEmail && zipPath) {
-            log(`Enviando email para ${userEmail}...`, 'info');
-            try {
-                // Modified to send ZIP or both files. Let's send the ZIP for convenience.
-                // Assuming sendReportEmail can handle a generic path or we need to update it.
-                // For now, let's pass the ZIP path but update email.js to handle attachment name dynamically if needed, 
-                // OR just update the call logic in email.js.
-                // Note: The variable passed is 'files.pdf' in original code. 
-                // We will reuse the function but pass zipPath.
-                await sendReportEmail(userEmail, zipPath, userInput, smtpConfig);
-                log('Email enviado com sucesso!', 'success');
-            } catch (emailErr) {
-                log(`Falha no envio de email: ${emailErr.message}`, 'error');
-            }
+            log(`Iniciando envio de email em segundo plano para ${userEmail}...`, 'info');
+            // Fire-and-forget: Don't await the email to avoid blocking the UI response
+            sendReportEmail(userEmail, zipPath, userInput, smtpConfig)
+                .then(() => {
+                    // This log might appear after the process "officially" finishes in the UI, which is fine
+                    console.log(`[EMAIL] Sucesso: Relatório enviado para ${userEmail}`);
+                })
+                .catch((emailErr) => {
+                    console.error(`[EMAIL] Falha ao enviar em background: ${emailErr.message}`);
+                });
         }
 
         const endTime = Date.now();
