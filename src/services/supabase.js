@@ -109,3 +109,34 @@ export async function findLatestReportByEmail(email) {
         return null;
     }
 }
+/**
+ * Finds all reports for a given email.
+ * @param {string} email
+ * @returns {Promise<Array<{id: string, zip_path: string, prompt: string, created_at: string}>>}
+ */
+export async function findAllReportsByEmail(email) {
+    if (!email) return [];
+
+    try {
+        // 1. Get Lead ID
+        const { data: lead } = await supabase
+            .from('leads')
+            .select('id')
+            .eq('email', email)
+            .single();
+
+        if (!lead) return [];
+
+        // 2. Get All Reports
+        const { data: reports } = await supabase
+            .from('reports')
+            .select('id, zip_path, prompt, created_at')
+            .eq('lead_id', lead.id)
+            .order('created_at', { ascending: false });
+
+        return reports || [];
+    } catch (err) {
+        console.error('[SUPABASE] Error finding all reports:', err);
+        return [];
+    }
+}

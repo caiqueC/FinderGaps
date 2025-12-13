@@ -36,9 +36,13 @@ export class JobManager {
 
         this.jobs.set(email, job);
 
-        // Attach the initial response immediately
-        this.setupResponse(initialRes);
-        job.listeners.push(initialRes);
+        // Attach the initial response immediately IF provided
+        if (initialRes) {
+            this.setupResponse(initialRes);
+            job.listeners.push(initialRes);
+        } else if (initialRes === null && this.jobs.has(email)) {
+            // If explicit null initialRes, do nothing, just running in background
+        }
 
         try {
             // Run the analysis

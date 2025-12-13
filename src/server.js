@@ -76,38 +76,36 @@ app.get('/reports/pdf/:filename', (req, res) => {
 
 app.use('/reports', express.static(join(process.cwd(), 'reports')));
 
-// 3. Generate Report Endpoint (SSE)
+// 3. Generate Report Endpoint (Trigger only)
 app.post('/api/generate', async (req, res) => {
-    // SSE Setup is now handled by JobManager, but we need to check inputs first
     try {
         const { prompt, email } = req.body;
-
         if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
-        // Email is optional in legacy flow but required for recovery. 
-        // If no email, we can't recover sessions, so standard flow applies?
-        // For now, let's assume email is passed (frontend enforces it).
 
         const { jobManager } = await import('./services/jobManager.js');
 
+        // If job exists, we just say "OK, connect to stream"
         if (email && jobManager.hasJob(email)) {
-            // RECOVERY MODE: Attach to existing job
-            console.log(`[API] Recovering session for: ${email}`);
-            jobManager.attach(email, res);
-            return;
+            return res.json({ success: true, message: 'Job already running, connect to stream.' });
         }
 
-        // NEW JOB MODE
         console.log(`[API] Starting new analysis for: ${email || 'Anonymous'}`);
-
-        // Dynamic import to ensure fresh logic if hot-reloaded (though ESM caching applies)
         const { runAnalysis } = await import('./services/conductor.js');
 
         if (email) {
-            // Start managed job
-            jobManager.startJob(email, prompt, runAnalysis, res);
+            // Start managed job (fire and forget from HTTP perspective, but JobManager holds it)
+            // We pass a FAKE response object because startJob expects to attach immediately?
+            // Actually, we can modify startJob to not require a response immediately, 
+            // OR we just don't pass one and JobManager handles empty listeners.
+            // Let's modify JobManager.startJob to handle optional initialRes.
+            jobManager.startJob(email, prompt, runAnalysis, null);
+            return res.json({ success: true, message: 'Job started' });
         } else {
-            // Legacy/Anonymous flow (no recovery support)
-            // Just mimic the old behavior setup headers manually
+            // Anonymous flow: MUST keep holding connection (Legacy)
+            // Cannot use GET stream easily for anonymous unless we issue a temp ID.
+            // For now, let's keep the legacy behavior for implicit anonymous support?
+            // User flow seems to always have email now.
+            // But let's keep the old logic inline for safety if email is missing.
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');
             res.setHeader('Connection', 'keep-alive');
@@ -115,29 +113,45 @@ app.post('/api/generate', async (req, res) => {
 
             runAnalysis(prompt, {
                 email,
-                onLog: (log) => {
-                    sendEvent(res, 'log', log);
-                }
+                onLog: (log) => sendEvent(res, 'log', log)
             }).then(result => {
                 const filename = result.zipPath.split('/').pop();
                 const downloadURL = `${req.protocol}://${req.get('host')}/reports/pdf/${filename}`;
-                sendEvent(res, 'complete', {
-                    success: true,
-                    pdfURL: downloadURL,
-                    message: 'Report generated successfully'
-                });
+                sendEvent(res, 'complete', { success: true, pdfURL: downloadURL, message: 'Report generated successfully' });
                 res.end();
             }).catch(error => {
-                console.error('[API] Generation Error:', error);
-                res.write(`event: error\ndata: ${JSON.stringify({ message: error.message })}\n\n`);
+                sendEvent(res, 'error', { message: error.message });
                 res.end();
             });
         }
-
     } catch (error) {
         console.error('[API] Request Error:', error);
         if (!res.headersSent) res.status(500).json({ error: error.message });
     }
+});
+
+// 3b. Stream Endpoint (GET) - Dedicated for SSE
+app.get('/api/stream', async (req, res) => {
+    const { email } = req.query;
+    if (!email) {
+        // If no email, close.
+        return res.status(400).send('Email required for streaming');
+    }
+
+    const { jobManager } = await import('./services/jobManager.js');
+
+    // If no job found, maybe it finished? Or never started?
+    // If it finished, JobManager keeps it for 5 mins.
+    // If not found, we can send a custom event or just close.
+    if (!jobManager.hasJob(email)) {
+        // Send a specific event saying "No active job" so frontend can handle?
+        // Or just 404?
+        // Let's 404. Frontend assumes 404 = expired or not found.
+        return res.status(404).send('No active job found');
+    }
+
+    console.log(`[API] Client connected to stream: ${email}`);
+    jobManager.attach(email, res);
 });
 
 // Helper for Legacy anonymous flow
@@ -165,49 +179,96 @@ app.post('/api/recover', async (req, res) => {
             });
         }
 
-        // 1. Find latest report in Supabase
-        const { findLatestReportByEmail } = await import('./services/supabase.js');
-        const report = await findLatestReportByEmail(email);
+        // 1. Find reports in Supabase
+        const { findAllReportsByEmail } = await import('./services/supabase.js');
+        const reports = await findAllReportsByEmail(email);
 
-        if (!report) {
-            console.log('[API] Recovery: No report found for this email.');
-            // Security: We might simulate success to avoid email enumeration, 
-            // but for this MVP let's be explicit or just 404.
-            // Let's return 404 for now so UI knows.
+        if (!reports || reports.length === 0) {
+            console.log('[API] Recovery: No reports found for this email.');
             return res.status(404).json({ error: 'Nenhum plano encontrado para este email.' });
         }
 
-        console.log(`[API] Found report: ${report.zip_path}`);
+        // Scenario A: Multiple Reports -> User must select
+        if (reports.length > 1) {
+            console.log(`[API] Recovery: Found ${reports.length} reports. Asking user to select.`);
+            return res.json({
+                action: 'select',
+                reports: reports.map(r => ({
+                    id: r.id,
+                    prompt: r.prompt,
+                    created_at: r.created_at
+                }))
+            });
+        }
 
-        // 2. Check if file exists locally
+        // Scenario B: Single Report -> Auto Send (Legacy convenience)
+        const report = reports[0];
+        console.log(`[API] Found single report: ${report.zip_path}`);
+
+        // Check if file exists locally
         const { existsSync } = await import('node:fs');
         if (!existsSync(report.zip_path)) {
             console.error('[API] Recovery: File missing on disk:', report.zip_path);
             return res.status(410).json({ error: 'O arquivo expirou no servidor. Por favor, gere um novo plano.' });
         }
 
-        // 3. Send Email
-        const { sendReportEmail } = await import('./services/email.js');
-        // Retrieve SMTP config (can assume it's loaded in env)
-        const smtpConfig = {
-            host: process.env.SMTP_HOST,
-            port: process.env.SMTP_PORT,
-            user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASS
-        };
-
-        // Fire-and-forget email sending
-        sendReportEmail(email, report.zip_path, report.prompt, smtpConfig)
-            .then(() => console.log(`[RECOVERY] Email sent to ${email}`))
-            .catch(err => console.error(`[RECOVERY] Failed to send email: ${err.message}`));
-
-        res.json({ success: true, message: 'Email de recuperação enviado!' });
+        // Send Email
+        await sendRecoveryEmail(email, report);
+        res.json({ action: 'sent', message: 'Email de recuperação enviado!' });
 
     } catch (err) {
         console.error('[API] Recovery Error:', err);
         res.status(500).json({ error: 'Erro interno ao recuperar documento.' });
     }
 });
+
+// 5. Send Specific Report Endpoint
+app.post('/api/recover/send', async (req, res) => {
+    try {
+        const { email, reportId } = req.body;
+        if (!email || !reportId) return res.status(400).json({ error: 'Email and Report ID required' });
+
+        // Verify report ownership/existence
+        const { findAllReportsByEmail } = await import('./services/supabase.js');
+        const reports = await findAllReportsByEmail(email);
+        const report = reports.find(r => r.id === reportId);
+
+        if (!report) {
+            return res.status(404).json({ error: 'Relatório não encontrado.' });
+        }
+
+        // Check if file exists locally
+        const { existsSync } = await import('node:fs');
+        if (!existsSync(report.zip_path)) {
+            return res.status(410).json({ error: 'Arquivo expirado.' });
+        }
+
+        await sendRecoveryEmail(email, report);
+        res.json({ success: true, message: 'Email enviado!' });
+
+    } catch (err) {
+        console.error('[API] Send Error:', err);
+        res.status(500).json({ error: 'Falha ao enviar email.' });
+    }
+});
+
+async function sendRecoveryEmail(email, report) {
+    const { sendReportEmail } = await import('./services/email.js');
+    const smtpConfig = {
+        host: process.env.SMTP_HOST,
+        port: process.env.SMTP_PORT,
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+    };
+
+    try {
+        await sendReportEmail(email, report.zip_path, report.prompt, smtpConfig);
+        console.log(`[RECOVERY] Email sent to ${email}`);
+    } catch (err) {
+        console.error(`[RECOVERY] Failed to send email: ${err.message}`);
+        throw err;
+    }
+}
 
 app.listen(PORT, () => {
     console.log(`[API] Server running on port ${PORT}`);
