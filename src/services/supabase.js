@@ -140,3 +140,177 @@ export async function findAllReportsByEmail(email) {
         return [];
     }
 }
+/**
+ * Creates a new job in the queue.
+ * @param {string} email 
+ * @param {string} prompt 
+ * @returns {Promise<string|null>} Job ID
+ */
+export async function createJob(email, prompt) {
+    try {
+        const leadId = await saveLead(email); // Ensure lead exists
+
+        const { data, error } = await supabase
+            .from('jobs')
+            .insert([{
+                email,
+                prompt,
+                lead_id: leadId,
+                status: 'queued',
+                step: 'start',
+                state: {}
+            }])
+            .select('id')
+            .single();
+
+        if (error) {
+            console.error('[SUPABASE] Failed to create job:', error.message);
+            return null;
+        }
+        return data.id;
+    } catch (err) {
+        console.error('[SUPABASE] Unexpected error creating job:', err);
+        return null;
+    }
+}
+
+/**
+ * atomic function to get next queued job
+ * @returns {Promise<{id, prompt, email, state, lead_id}|null>}
+ */
+export async function getNextJob() {
+    try {
+        const { data, error } = await supabase
+            .rpc('get_next_job');
+
+        if (error) {
+            console.error('[SUPABASE] Error getting next job:', error.message);
+            return null;
+        }
+
+        // RPC returns an array of rows (or empty array)
+        if (data && data.length > 0) {
+            return data[0];
+        }
+        return null;
+    } catch (err) {
+        console.error('[SUPABASE] Unexpected error in getNextJob:', err);
+        return null;
+    }
+}
+
+/**
+ * Updates the job status and state (Checkpoint).
+ * @param {string} jobId 
+ * @param {string} step 
+ * @param {object} partialState 
+ */
+export async function updateJobStep(jobId, step, partialState = {}) {
+    try {
+        // We merge new state with existing state using postgres jsonb_concat or just fetch-update-save.
+        // For simplicity and atomic safety in simple steps, let's assume we pass the FULL state accumulator from conductor,
+        // or we trust the partial update.
+        // Actually, conductor usually accumulates state. Let's assume partialState is the NEW accumulation.
+        // But to be safe, let's just update what we get.
+
+        // Note: Supabase JS update merges top-level columns, but for JSONB columns it replaces the value unless we use a transformed query.
+        // Ideally we pass the full `state` object here.
+
+        const { error } = await supabase
+            .from('jobs')
+            .update({
+                step,
+                state: partialState,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', jobId);
+
+        if (error) console.error(`[SUPABASE] Failed to update job ${jobId}:`, error.message);
+    } catch (err) {
+        console.error(`[SUPABASE] Error updating job ${jobId}:`, err);
+    }
+}
+
+/**
+ * Marks job as completed.
+ * @param {string} jobId 
+ * @param {object} result 
+ */
+export async function completeJob(jobId, result) {
+    try {
+        await supabase
+            .from('jobs')
+            .update({
+                status: 'completed',
+                result,
+                completed_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', jobId);
+    } catch (err) {
+        console.error(`[SUPABASE] Error completing job ${jobId}:`, err);
+    }
+}
+
+/**
+ * Marks job as failed.
+ * @param {string} jobId 
+ * @param {string} errorMessage 
+ */
+export async function failJob(jobId, errorMessage) {
+    try {
+        await supabase
+            .from('jobs')
+            .update({
+                status: 'failed',
+                error: errorMessage,
+                completed_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', jobId);
+    } catch (err) {
+        console.error(`[SUPABASE] Error failing job ${jobId}:`, err);
+    }
+}
+
+/**
+ * Finds an active job (queued or processing) for an email.
+ * Used for recovery / duplicate prevention.
+ */
+export async function findActiveJobByEmail(email) {
+    try {
+        const { data } = await supabase
+            .from('jobs')
+            .select('id, status, step, prompt, created_at')
+            .eq('email', email)
+            .in('status', ['queued', 'processing'])
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        return data;
+    } catch (err) {
+        return null;
+    }
+}
+
+/**
+ * Resets 'processing' jobs to 'queued' on server restart.
+ * This handles crash recovery.
+ */
+export async function recoverStalledJobs() {
+    try {
+        const { error } = await supabase
+            .from('jobs')
+            .update({ status: 'queued', updated_at: new Date().toISOString() })
+            .eq('status', 'processing');
+
+        if (error) {
+            console.error('[SUPABASE] Failed to recover stalled jobs:', error.message);
+        } else {
+            console.log('[SUPABASE] recovered stalled jobs (reset to queued).');
+        }
+    } catch (err) {
+        console.error('[SUPABASE] Error recovering stalled jobs:', err);
+    }
+}

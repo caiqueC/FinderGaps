@@ -1,128 +1,149 @@
+import {
+    createJob,
+    getNextJob,
+    updateJobStep,
+    completeJob,
+    failJob,
+    findActiveJobByEmail,
+    recoverStalledJobs
+} from './supabase.js';
 
-/**
- * JobManager handles active analysis jobs to support session recovery (page refresh).
- * It stores logs in memory and allows multiple clients (or the same client after refresh)
- * to attach to the same running process.
- */
 export class JobManager {
     constructor() {
-        this.jobs = new Map(); // Map<email, { logs: [], listeners: [], process: Promise }>
-    }
+        this.activeListeners = new Map(); // Map<email, Response[]>
+        this.MAX_CONCURRENT = 4;
+        this.activeWorkers = 0;
 
-    hasJob(email) {
-        return this.jobs.has(email);
+        // Recover stalled jobs on boot
+        recoverStalledJobs();
+
+        // Start the worker loop
+        this.workerLoop();
     }
 
     /**
-     * Starts a new job or returns existing one if race condition.
-     * @param {string} email 
-     * @param {string} prompt 
-     * @param {function} runFn - The runAnalysis function
-     * @param {Response} initialRes - The response object of the first request
+     * Main Worker Loop
+     * Polls DB for queued jobs if we have capacity.
      */
-    async startJob(email, prompt, runFn, initialRes) {
-        if (this.jobs.has(email)) {
-            return this.attach(email, initialRes);
-        }
+    async workerLoop() {
+        setInterval(async () => {
+            if (this.activeWorkers < this.MAX_CONCURRENT) {
+                const job = await getNextJob();
+                if (job) {
+                    this.runWorker(job);
+                }
+            }
+        }, 2000); // Check every 2 seconds
+    }
 
-        console.log(`[JobManager] Starting new job for: ${email}`);
+    /**
+     * Executes a job (Worker)
+     * @param {object} job 
+     */
+    async runWorker(job) {
+        this.activeWorkers++;
+        const { id, email, prompt, state } = job;
 
-        const job = {
-            logs: [],
-            listeners: [],
-            prompt, // Store prompt for potential cleanup or recovery
-            startTime: Date.now()
-        };
+        console.log(`[WORKER] Starting job ${id} for ${email}`);
 
-        this.jobs.set(email, job);
-
-        // Attach the initial response immediately IF provided
-        if (initialRes) {
-            this.setupResponse(initialRes);
-            job.listeners.push(initialRes);
-        } else if (initialRes === null && this.jobs.has(email)) {
-            // If explicit null initialRes, do nothing, just running in background
-        }
+        // Notify listeners processing started
+        this.broadcast(email, 'log', { text: "Iniciando processamento na fila...", type: 'info' });
 
         try {
-            // Run the analysis
-            const result = await runFn(prompt, {
+            // Import conductor dynamically to avoid circular deps if any
+            const { runAnalysis } = await import('./conductor.js');
+
+            // Run Analysis with Checkpointing
+            // We pass 'state' (resumed data) and a checkpoint callback
+            const result = await runAnalysis(prompt, {
                 email,
+                jobId: id,
+                initialState: state, // RESUME DATA
                 onLog: (logItem) => {
-                    // Buffer log
-                    job.logs.push(logItem);
-                    // Broadcast to all active listeners
                     this.broadcast(email, 'log', logItem);
+                },
+                onCheckpoint: async (step, partialData) => {
+                    // Save state to DB
+                    await updateJobStep(id, step, partialData);
                 }
             });
 
-            // Job Done
+            // Success
+            await completeJob(id, result);
+
             const completeMsg = {
                 success: true,
                 pdfURL: result.zipPath ? `/reports/pdf/${result.zipPath.split('/').pop()}` : null,
                 message: 'Report generated successfully'
             };
-
-            // Buffer final state so late joiners see it's done
-            job.logs.push({ type: 'complete', data: completeMsg });
-
             this.broadcast(email, 'complete', completeMsg);
 
         } catch (error) {
-            console.error(`[JobManager] Job failed for ${email}:`, error);
-            const errorMsg = { message: error.message };
-            job.logs.push({ type: 'error', data: errorMsg });
-            this.broadcast(email, 'error', errorMsg);
+            console.error(`[WORKER] Job ${id} failed:`, error);
+            await failJob(id, error.message);
+            this.broadcast(email, 'error', { message: error.message });
         } finally {
-            // Cleanup after a delay to allow final polling/fetching
-            setTimeout(() => {
-                console.log(`[JobManager] Cleaning up job for: ${email}`);
-                this.jobs.delete(email);
-            }, 60000 * 5); // Keep for 5 minutes after finish, just in case
+            this.activeWorkers--;
+            console.log(`[WORKER] Job ${id} finished. Slots: ${this.activeWorkers}/${this.MAX_CONCURRENT}`);
         }
     }
 
     /**
-     * Reconnects a client to an active job.
-     * Replays all buffered logs.
+     * Entry point for new requests.
+     * Just creates the DB record. The worker loop will pick it up.
      */
-    attach(email, res) {
-        const job = this.jobs.get(email);
-        if (!job) return false;
-
-        console.log(`[JobManager] Re-attaching client for: ${email}`);
-
-        this.setupResponse(res);
-        job.listeners.push(res);
-
-        // Replay history
-        for (const item of job.logs) {
-            if (item.type === 'complete') {
-                res.write(`event: complete\ndata: ${JSON.stringify(item.data)}\n\n`);
-            } else if (item.type === 'error') {
-                res.write(`event: error\ndata: ${JSON.stringify(item.data)}\n\n`);
-            } else {
-                // Regular log
-                res.write(`event: log\ndata: ${JSON.stringify(item)}\n\n`);
-            }
+    async startJob(email, prompt, runFn, initialRes) {
+        // 1. Check if already active to prevent duplicates
+        const existing = await findActiveJobByEmail(email);
+        if (existing) {
+            console.log(`[JobManager] Existing job found for ${email}, attaching...`);
+            if (initialRes) this.attach(email, initialRes);
+            return;
         }
 
-        // If job is already finished (has complete/error in logs), end responses?
-        // Actually, we usually leave the stream open until client closes, or we can end it if done.
-        // For simplicity, let's keep it open, the client usually calls EventSource.close().
+        // 2. Create in DB (Status: queued)
+        const jobId = await createJob(email, prompt);
 
-        return true;
+        if (initialRes) {
+            this.attach(email, initialRes);
+            // Send immediate feedback
+            initialRes.write(`event: log\ndata: ${JSON.stringify({ text: "Solicitação na fila de processamento...", type: 'info' })}\n\n`);
+        }
+    }
+
+    /**
+     * Manages SSE connections
+     */
+    attach(email, res) {
+        if (!this.activeListeners.has(email)) {
+            this.activeListeners.set(email, []);
+        }
+
+        this.setupResponse(res);
+        this.activeListeners.get(email).push(res);
+
+        // Clean up on close
+        res.on('close', () => {
+            const list = this.activeListeners.get(email) || [];
+            this.activeListeners.set(email, list.filter(r => r !== res));
+        });
+    }
+
+    async hasJob(email) {
+        if (!email) return false;
+        // Check DB for active job
+        const job = await findActiveJobByEmail(email);
+        return !!job;
     }
 
     broadcast(email, event, data) {
-        const job = this.jobs.get(email);
-        if (!job) return;
+        const listeners = this.activeListeners.get(email);
+        if (!listeners) return;
 
-        // Filter out closed responses
-        job.listeners = job.listeners.filter(res => !res.writableEnded);
-
-        job.listeners.forEach(res => {
-            res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        listeners.forEach(res => {
+            if (!res.writableEnded) {
+                res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+            }
         });
     }
 

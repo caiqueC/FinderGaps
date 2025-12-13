@@ -85,7 +85,7 @@ app.post('/api/generate', async (req, res) => {
         const { jobManager } = await import('./services/jobManager.js');
 
         // If job exists, we just say "OK, connect to stream"
-        if (email && jobManager.hasJob(email)) {
+        if (email && await jobManager.hasJob(email)) {
             return res.json({ success: true, message: 'Job already running, connect to stream.' });
         }
 
@@ -143,7 +143,7 @@ app.get('/api/stream', async (req, res) => {
     // If no job found, maybe it finished? Or never started?
     // If it finished, JobManager keeps it for 5 mins.
     // If not found, we can send a custom event or just close.
-    if (!jobManager.hasJob(email)) {
+    if (!await jobManager.hasJob(email)) {
         // Send a specific event saying "No active job" so frontend can handle?
         // Or just 404?
         // Let's 404. Frontend assumes 404 = expired or not found.
@@ -169,7 +169,7 @@ app.post('/api/recover', async (req, res) => {
 
         // 0. Check for ACTIVE job first
         const { jobManager } = await import('./services/jobManager.js');
-        if (jobManager.hasJob(email)) {
+        if (await jobManager.hasJob(email)) {
             const job = jobManager.jobs.get(email);
             console.log(`[API] Recovery: Found active job for ${email}`);
             return res.status(202).json({

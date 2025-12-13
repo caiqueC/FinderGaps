@@ -26,11 +26,18 @@ import { getFormattedAverage, saveRunTime } from './tracker.js';
 // Polyfill removed, using import from cli.js
 
 export async function runAnalysis(prompt, options = {}) {
-    // Options: email, onLog, onProgress
-    const { email: userEmail, onLog } = options;
+    // Options: email, onLog, jobId, initialState, onCheckpoint
+    const { email: userEmail, onLog, jobId, initialState = {}, onCheckpoint } = options;
     const log = (msg, type = 'info') => {
         if (onLog) onLog({ message: msg, type });
         console.log(`[CONDUCTOR] ${msg}`);
+    };
+
+    // Helper to checkpoint state
+    const saveState = async (step, data) => {
+        if (onCheckpoint) {
+            await onCheckpoint(step, data);
+        }
     };
 
     // 1. Save Lead (Fire-and-forget or await? Fast enough to await to get ID)
@@ -44,27 +51,9 @@ export async function runAnalysis(prompt, options = {}) {
 
     const startTime = Date.now();
     log(`Iniciando análise para: ${prompt.substring(0, 50)}...`);
-    log('Iniciando a pesquisa de mercado...');
-    // Tempo estimado desativado temporariamente em favor de texto estático no frontend (15min)
-    // const estMinutes = await getFormattedAverage();
-    // if (estMinutes > 0) {
-    //    log(`Tempo estimado: ~${estMinutes} minutos (baseado no histórico).`, 'info');
-    // } else {
-    //    log(`Calculando estimativa de tempo inicial...`, 'info');
-    // }
-
-    log(`Iniciando análise para: ${prompt}`);
 
     try {
-        // Ensure Env is loaded
         await loadEnv();
-
-        // And I also need to save the time at the end.
-        // Since I can't do non-contiguous edits easily without MultiReplace, and I want to be safe...
-        // I will use MultiReplaceFileContent.
-
-        // Ensure Env is loaded
-        // await loadEnv(); // This line is moved inside the try block of runAnalysis
 
         const f = await fetchFn();
         const braveKey = process.env.BRAVE_API_KEY;
@@ -75,8 +64,7 @@ export async function runAnalysis(prompt, options = {}) {
         }
 
         // Email setup
-        let sendEmail = !!options.email;
-        let userEmail = options.email || '';
+        let sendEmail = !!userEmail;
         const smtpConfig = {
             host: process.env.SMTP_HOST,
             port: process.env.SMTP_PORT,
@@ -89,108 +77,175 @@ export async function runAnalysis(prompt, options = {}) {
             sendEmail = false;
         }
 
-        // try { // This try block is now part of the outer runAnalysis try block
-        // const startTime = Date.now(); // Already defined at the top of runAnalysis
-        log('Iniciando a pesquisa de mercado...', 'info');
         let userInput = prompt;
 
-        // 1. Keyword Generation
-        log('Definindo estratégia e palavras-chave...', 'info');
-        let keywordPlan = await generateKeywordsFromInput(f, openKey, userInput);
+        // --- ZERO COST TEST MODE ---
+        if (userInput.startsWith('[TEST]')) {
+            log('⚠️ MODO TESTE DETECTADO: Simulando análise sem custo...', 'warning');
 
-        // Handle Ambiguity
-        if ((keywordPlan.confidence || 0) < 0.7) {
-            log('Confiança da análise inicial baixa, mas prosseguindo...', 'warning');
+            const steps = [
+                { step: 'keywords', label: 'Gerando palavras-chave fake...', time: 2000 },
+                { step: 'search', label: 'Simulando busca no Google...', time: 2000 },
+                { step: 'analysis', label: 'Lendo sites simulados...', time: 3000 },
+                { step: 'narrative', label: 'Escrevendo relatório fake...', time: 2000 }
+            ];
+
+            for (const s of steps) {
+                log(s.label);
+                // Checkpoint
+                await saveState(s.step, { test_data: 'mock', ...initialState });
+                // Sleep
+                await new Promise(r => setTimeout(r, s.time));
+            }
+
+            log('Teste concluído com sucesso.', 'success');
+            return {
+                pdfPath: 'mock_report.pdf',
+                zipPath: 'mock_kit.zip',
+                jsonPath: 'mock_data.json',
+                htmlPath: 'mock_view.html'
+            };
+        }
+
+        // --- STEP 1: KEYWORDS ---
+        let keywordPlan = initialState.keywordPlan;
+        if (!keywordPlan) {
+            log('Definindo estratégia e palavras-chave...', 'info');
+            keywordPlan = await generateKeywordsFromInput(f, openKey, userInput);
+            await saveState('keywords', { ...initialState, keywordPlan });
+        } else {
+            log('Recuperando estratégia de palavras-chave do banco...', 'success');
         }
 
         const extraKw = Array.from(new Set([...(keywordPlan.competitor || []), ...(keywordPlan.reference || [])]));
-        log(`Explorando o mercado (${extraKw.length} variações)...`, 'info');
 
-        // 2. Initial Broad Search
-        let catalog = await collectCommercialSites(f, braveKey, userInput, 100, 20, openKey, extraKw, (info) => {
-            if (info.event === 'variants') {
-                log(`Estratégia definida: Investigando ${info.count} ângulos de busca...`, 'info');
-            } else if (info.event === 'searching_variant') {
-                // Log only every 3rd variant to avoid spamming the UI too much, or if it's the last one
-                if (info.current % 3 === 0 || info.current === info.total) {
-                    log(`Analisando dimensão: ${info.query} (${info.current}/${info.total})...`, 'info');
+        // --- STEP 2: BROAD SEARCH (CATALOG) ---
+        let catalog = initialState.catalog;
+        if (!catalog) {
+            log(`Explorando o mercado (${extraKw.length} variações)...`, 'info');
+            catalog = await collectCommercialSites(f, braveKey, userInput, 100, 20, openKey, extraKw, (info) => {
+                if (info.event === 'variants') {
+                    log(`Estratégia definida: Investigando ${info.count} ângulos de busca...`, 'info');
+                } else if (info.event === 'searching_variant') {
+                    if (info.current % 3 === 0 || info.current === info.total) {
+                        log(`Analisando dimensão: ${info.query} (${info.current}/${info.total})...`, 'info');
+                    }
+                } else if (info.event === 'domains') {
+                    log(`Scanner concluído: ${info.count} sites candidatos encontrados.`, 'success');
+                } else if (info.event === 'classified') {
+                    log(`Classificação de IA: ${info.competitors} concorrentes diretos e ${info.references} referências.`, 'info');
                 }
-            } else if (info.event === 'domains') {
-                log(`Scanner concluído: ${info.count} sites candidatos encontrados.`, 'success');
-            } else if (info.event === 'classified') {
-                log(`Classificação de IA: ${info.competitors} concorrentes diretos e ${info.references} referências.`, 'info');
-            }
-        });
+            });
+            await saveState('search', { ...initialState, keywordPlan, catalog });
+        } else {
+            log('Recuperando catálogo de concorrentes do banco...', 'success');
+        }
 
-        // 3. Scenario Detection
-        const scenario = await detectScenario(f, openKey, userInput, catalog.competitors, catalog.references);
-        log(`Cenário de Mercado Detectado: ${scenario}`, 'success');
+        // --- STEP 3: SCENARIO ---
+        let scenario = initialState.scenario;
+        if (!scenario) {
+            scenario = await detectScenario(f, openKey, userInput, catalog.competitors, catalog.references);
+            log(`Cenário de Mercado Detectado: ${scenario}`, 'success');
+            await saveState('scenario', { ...initialState, keywordPlan, catalog, scenario });
+        } else {
+            log(`Cenário recuperado: ${scenario}`, 'success');
+        }
 
-        // 4. Adaptive Search (Blue Ocean Pivot)
-        if (scenario === 'BLUE_OCEAN' && catalog.competitors.length < 3) {
+        // --- STEP 4: ADAPTIVE SEARCH (BLUE OCEAN) ---
+        let substitutesAdded = initialState.substitutesAdded;
+        if (scenario === 'BLUE_OCEAN' && catalog.competitors.length < 3 && !substitutesAdded) {
             log('Cenário Mar Azul: Buscando soluções substitutas...', 'info');
             const substitutes = await expandSearchForSubstitutes(f, braveKey, userInput);
             for (const sub of substitutes) {
-                catalog.competitors.push({ title: sub.title, url: sub.url, description: sub.description, product_service: 'Solução Substituta (Workaround)' });
+                if (!catalog.competitors.find(c => c.url === sub.url)) {
+                    catalog.competitors.push({ title: sub.title, url: sub.url, description: sub.description, product_service: 'Solução Substituta (Workaround)' });
+                }
             }
+            await saveState('adaptive_search', { ...initialState, keywordPlan, catalog, scenario, substitutesAdded: true });
         }
 
         const total = (catalog.competitors?.length || 0) + (catalog.references?.length || 0);
-        if (!total) {
-            throw new Error('Nenhum resultado relevante encontrado para este termo.');
-        }
+        if (!total) throw new Error('Nenhum resultado relevante encontrado para este termo.');
 
         log(`${catalog.competitors.length} concorrentes/substitutos identificados.`, 'info');
 
-        // 5. Competitor Analysis
+        // --- STEP 5: COMPETITOR ANALYSIS (PARTIAL RESUME) ---
         log('Analisando concorrentes em profundidade...', 'info');
-        const processCompetitor = async (r, i) => {
-            try {
-                // log(`Lendo página: ${r.title || r.url}`); // Too verbose?
-                const text = await fetchPageText(f, r.url, 8000);
-                const sum = await summarizeCompetitorOffering(f, openKey, userInput, r, text);
-                return { ...r, ...sum };
-            } catch (err) {
-                return { ...r, error: err.message };
+
+        let competitorDetails = initialState.competitorDetails || [];
+        const processedUrls = new Set(competitorDetails.map(c => c.url));
+        const queue = catalog.competitors.filter(c => !processedUrls.has(c.url));
+
+        if (queue.length > 0) {
+            log(`Retomando análise de ${queue.length} concorrentes restantes...`);
+
+            const processCompetitor = async (r, i) => {
+                try {
+                    const text = await fetchPageText(f, r.url, 8000);
+                    const sum = await summarizeCompetitorOffering(f, openKey, userInput, r, text);
+                    return { ...r, ...sum };
+                } catch (err) {
+                    return { ...r, error: err.message };
+                }
+            };
+
+            let index = processedUrls.size;
+            const CHUNK_SIZE = 3;
+            for (let i = 0; i < queue.length; i += CHUNK_SIZE) {
+                const chunk = queue.slice(i, i + CHUNK_SIZE);
+                const results = await Promise.all(chunk.map(item => processCompetitor(item, index++)));
+                competitorDetails.push(...results);
+
+                log(`Processados ${competitorDetails.length}/${catalog.competitors.length}...`);
+
+                await saveState('analysis_partial', { ...initialState, keywordPlan, catalog, scenario, substitutesAdded: true, competitorDetails });
             }
-        };
 
-        const competitorDetails = [];
-        const queue = [...catalog.competitors];
-        let index = 0;
-        const worker = async () => {
-            while (queue.length > 0) {
-                const item = queue.shift();
-                const result = await processCompetitor(item, index++);
-                competitorDetails.push(result);
-                if (index % 2 === 0) log(`Analisados ${index}/${catalog.competitors.length} concorrentes...`);
-            }
-        };
-        await Promise.all(Array(Math.min(5, queue.length)).fill(null).map(() => worker()));
+            await saveState('analysis_complete', { ...initialState, keywordPlan, catalog, scenario, substitutesAdded: true, competitorDetails });
+        } else {
+            log('Análise de concorrentes já concluída.', 'success');
+        }
 
-        // 6. Negative Search
-        log('Investigando reclamações e dores de usuários (Negative Search)...', 'info');
-        const negativeData = await runNegativeSearch(f, braveKey, openKey, userInput, scenario, competitorDetails);
+        // --- STEP 6: NEGATIVE SEARCH ---
+        let negativeData = initialState.negativeData;
+        if (!negativeData) {
+            log('Investigando reclamações e dores de usuários (Negative Search)...', 'info');
+            negativeData = await runNegativeSearch(f, braveKey, openKey, userInput, scenario, competitorDetails);
+            await saveState('negative_search', { ...initialState, keywordPlan, catalog, scenario, substitutesAdded: true, competitorDetails, negativeData });
+        } else {
+            log('Dados de reclamações recuperados.', 'success');
+        }
 
-        log('Refinando e filtrando dados...', 'info');
-        const filteredRefs = await dedupeReferencesByTopic(f, openKey, userInput, catalog.references);
+        // --- STEP 7: NARRATIVE ---
+        let narratives = initialState.narratives;
+        let filteredRefs = initialState.filteredRefs;
 
-        // 7. Generative Narrative
+        if (!filteredRefs) {
+            log('Refinando e filtrando dados...', 'info');
+            filteredRefs = await dedupeReferencesByTopic(f, openKey, userInput, catalog.references);
+        }
+
         const reportData = {
             keywordPlan,
             extraKeywords: extraKw,
             competitors: catalog.competitors,
-            competitorDetails: competitorDetails.map(c => ({ ...c, reclameAqui: negativeData.filter(n => n.brand === c.title || n.brand === c.host) })),
-            negativeData,
+            competitorDetails: competitorDetails.map(c => ({ ...c, reclameAqui: (negativeData || []).filter(n => n.brand === c.title || n.brand === c.host) })),
+            negativeData: negativeData || [],
             referencesBefore: catalog.references.length,
-            referencesAfter: filteredRefs.length,
+            referencesAfter: (filteredRefs || []).length,
         };
 
-        log('Escrevendo narrativa estratégica final...', 'info');
-        const narratives = await generateScenarioNarrative(f, openKey, userInput, reportData, scenario);
+        if (!narratives) {
+            log('Escrevendo narrativa estratégica final...', 'info');
+            narratives = await generateScenarioNarrative(f, openKey, userInput, reportData, scenario);
+            await saveState('narrative', { ...initialState, keywordPlan, catalog, scenario, substitutesAdded: true, competitorDetails, negativeData, filteredRefs, narratives });
+        } else {
+            log('Narrativa recuperada.', 'success');
+        }
+
         const finalData = { ...reportData, narratives, scenario };
 
-        // 8. Save Files
+        // --- STEP 8: FILES ---
         log('Gerando arquivos do relatório...', 'info');
         const files = await saveReports(userInput, finalData);
         log(`Arquivos salvos.`, 'success');
@@ -198,22 +253,19 @@ export async function runAnalysis(prompt, options = {}) {
         log('Renderizando PDF do Estudo...', 'info');
         await renderPdfReport(await readFile(files.html, 'utf8'), files.pdf);
 
-        // 9. Generate Blueprint
+        // --- STEP 9: BLUEPRINT ---
         log('Gerando Blueprint de Produto...', 'info');
         const blueprintHtml = renderBlueprintHtml(userInput);
         const blueprintPath = files.pdf.replace('.pdf', '_Blueprint.pdf');
         await renderPdfReport(blueprintHtml, blueprintPath);
 
-        // 10. Create ZIP
+        // --- STEP 10: ZIP ---
         log('Empacotando Kit Plan Genie...', 'info');
-
-        // Cleaner "Raw" filename
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         const zipPath = resolve(files.pdf.replace(files.pdf.split('/').pop(), `PlanGenie_Export_RAW_${timestamp}.zip`));
 
         const output = createWriteStream(zipPath);
         const archive = archiver('zip', { zlib: { level: 9 } });
-
         const absPdfPath = resolve(files.pdf);
         const absBlueprintPath = resolve(blueprintPath);
 
@@ -221,42 +273,33 @@ export async function runAnalysis(prompt, options = {}) {
             output.on('close', resolve);
             archive.on('error', reject);
             archive.pipe(output);
-
-            // Numbered files for clear reading flow
             archive.file(absPdfPath, { name: '01_LEIA_PRIMEIRO_Diagnostico_de_Mercado.pdf' });
             archive.file(absBlueprintPath, { name: '02_EXECUCAO_Blueprint_Tatico.pdf' });
-
             archive.finalize();
         });
 
-        // 11. Save to Supabase (Background)
+        // 11. Final Save (Supabase Report Table - Legacy)
         if (leadId) {
-            saveReport(leadId, {
+            await saveReport(leadId, {
                 prompt: userInput,
-                reportData: { ...reportData, narratives }, // Full JSON data
+                reportData: { ...reportData, narratives },
                 zipPath: zipPath
             });
         }
 
         if (sendEmail && zipPath) {
             log(`Iniciando envio de email em segundo plano para ${userEmail}...`, 'info');
-            // Fire-and-forget: Don't await the email to avoid blocking the UI response
             sendReportEmail(userEmail, zipPath, userInput, smtpConfig)
-                .then(() => {
-                    // This log might appear after the process "officially" finishes in the UI, which is fine
-                    console.log(`[EMAIL] Sucesso: Relatório enviado para ${userEmail}`);
-                })
-                .catch((emailErr) => {
-                    console.error(`[EMAIL] Falha ao enviar em background: ${emailErr.message}`);
-                });
+                .then(() => console.log(`[EMAIL] Sucesso: Relatório enviado para ${userEmail}`))
+                .catch((emailErr) => console.error(`[EMAIL] Falha ao enviar em background: ${emailErr.message}`));
         }
 
         const endTime = Date.now();
         await saveRunTime(endTime - startTime);
 
         return {
-            pdfPath: files.pdf, // Keep for legacy reference if needed
-            zipPath: zipPath,   // New return
+            pdfPath: files.pdf,
+            zipPath: zipPath,
             jsonPath: files.json,
             htmlPath: files.html
         };
