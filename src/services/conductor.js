@@ -100,7 +100,7 @@ export async function runAnalysis(prompt, options = {}) {
             } else if (info.event === 'searching_variant') {
                 // Log only every 3rd variant to avoid spamming the UI too much, or if it's the last one
                 if (info.current % 3 === 0 || info.current === info.total) {
-                    log(`Varrendo setor: "${info.query}" (${info.current}/${info.total})...`, 'info');
+                    log(`Analisando dimensão: ${info.query} (${info.current}/${info.total})...`, 'info');
                 }
             } else if (info.event === 'domains') {
                 log(`Scanner concluído: ${info.count} sites candidatos encontrados.`, 'success');

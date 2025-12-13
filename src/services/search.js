@@ -88,8 +88,9 @@ export async function collectCommercialSites(f, braveKey, term, maxDomains = 100
   let variantsProcessed = 0;
   for (const v of variants) {
     variantsProcessed++;
+    const angle = v.replace(term, '').trim() || 'Core';
     if (typeof onProgress === 'function') {
-      onProgress({ event: 'searching_variant', query: v, current: variantsProcessed, total: variants.length });
+      onProgress({ event: 'searching_variant', query: angle, current: variantsProcessed, total: variants.length });
     }
     let results = [];
     try {
