@@ -326,3 +326,38 @@ export async function generateScenarioNarrative(f, openKey, term, data, strategy
     return null;
   }
 }
+
+/**
+ * Checks if the OpenRouter key has remaining credits/limit.
+ * @param {Function} f - fetch function
+ * @param {string} openKey - API Key
+ * @returns {Promise<boolean>} true if operational, false if quota exceeded
+ */
+export async function checkCreditBalance(f, openKey) {
+  if (!openKey) return false;
+  try {
+    const keyResp = await f('https://openrouter.ai/api/v1/auth/key', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${openKey}` },
+    });
+
+    if (!keyResp.ok) return true; // Fail open if API error
+
+    const data = await keyResp.json();
+    const info = data?.data;
+
+    if (!info) return true;
+
+    // Check limit vs usage (if limit exists)
+    if (info.limit !== null && info.limit !== undefined) {
+      const remaining = info.limit - info.usage;
+      // Block if less than $0.10 (safety margin)
+      if (remaining < 0.1) return false;
+    }
+
+    return true;
+  } catch (e) {
+    console.error('Credit check error:', e);
+    return true; // Fail open
+  }
+}

@@ -270,6 +270,30 @@ async function sendRecoveryEmail(email, report) {
     }
 }
 
+// 6. System Status / Health Check (Credits)
+app.get('/api/system-status', async (req, res) => {
+    try {
+        const { checkCreditBalance } = await import('./services/openrouter.js');
+        const apiKey = process.env.OPENROUTER_API_KEY;
+
+        // Pass global fetch
+        const operational = await checkCreditBalance(fetch, apiKey);
+
+        if (operational) {
+            res.json({ status: 'operational' });
+        } else {
+            console.error('[API] System Status: Insufficient Credits');
+            res.status(503).json({ status: 'maintenance', message: 'Sistema em manutenção programada. Tente novamente mais tarde.' });
+        }
+    } catch (err) {
+        console.error('[API] Status Check Error:', err);
+        // Fail open or closed? If we can't check, maybe fail open to avoid losing sales on blips?
+        // But if it's a code error, better be safe.
+        // Let's return 200 to allow sales if check fails (e.g. timeout), logic in checkCreditBalance handles strictness.
+        res.json({ status: 'operational' });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`[API] Server running on port ${PORT}`);
     console.log(`[API] Frontend URL set to: ${FRONTEND_URL}`);
