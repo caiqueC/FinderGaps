@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import Stripe from 'stripe';
 import { loadEnv } from './services/env.js';
-import { runAnalysis } from './services/conductor.js'; // We need to export this function from conductor.js first!
+
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -41,7 +41,7 @@ app.post('/api/checkout', async (req, res) => {
                             name: 'Estudo de Mercado Profundo',
                             description: 'Análise completa de concorrentes, gaps e estratégia.',
                         },
-                        unit_amount: 2997, // R$ 29,97
+                        unit_amount: 5990, // R$ 59,90
                     },
                     quantity: 1,
                 },

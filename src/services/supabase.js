@@ -1,11 +1,21 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Hardcoded for MVP speed, ideally should be in .env but user provided them directly.
-// We use the ANON KEY because RLS policies allow public INSERT/SELECT.
-const SUPABASE_URL = 'https://pjykvhnsrejttxqsxjee.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBqeWt2aG5zcmVqdHR4cXN4amVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1NzU0MjEsImV4cCI6MjA4MTE1MTQyMX0.ZCWu19DexbZc6eipg-4vCSUgVY6egmAUQ0c4bQg8pk8';
+// Hardcoded keys moved to .env for security.
+// Ensure verify-db.js or server.js calls loadEnv() before importing this service if running standalone.
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+let supabaseInstance = null;
+
+function getSupabase() {
+    if (supabaseInstance) return supabaseInstance;
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_KEY = process.env.SUPABASE_KEY;
+
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+        throw new Error("[SUPABASE] Missing Environment Variables! Check .env");
+    }
+    supabaseInstance = createClient(SUPABASE_URL, SUPABASE_KEY);
+    return supabaseInstance;
+}
 
 /**
  * Saves or retrieves a lead by email.
@@ -17,7 +27,7 @@ export async function saveLead(email) {
 
     try {
         // First try to find existing
-        const { data: existing } = await supabase
+        const { data: existing } = await getSupabase()
             .from('leads')
             .select('id')
             .eq('email', email)
@@ -28,7 +38,7 @@ export async function saveLead(email) {
         }
 
         // Create new
-        const { data: created, error } = await supabase
+        const { data: created, error } = await getSupabase()
             .from('leads')
             .insert([{ email }])
             .select('id')
@@ -57,7 +67,7 @@ export async function saveReport(leadId, { prompt, reportData, zipPath }) {
     }
 
     try {
-        const { error } = await supabase
+        const { error } = await getSupabase()
             .from('reports')
             .insert([{
                 lead_id: leadId,
@@ -86,7 +96,7 @@ export async function findLatestReportByEmail(email) {
 
     try {
         // 1. Get Lead ID
-        const { data: lead } = await supabase
+        const { data: lead } = await getSupabase()
             .from('leads')
             .select('id')
             .eq('email', email)
@@ -95,7 +105,7 @@ export async function findLatestReportByEmail(email) {
         if (!lead) return null;
 
         // 2. Get Latest Report
-        const { data: report } = await supabase
+        const { data: report } = await getSupabase()
             .from('reports')
             .select('id, zip_path, prompt, created_at')
             .eq('lead_id', lead.id)
@@ -119,7 +129,7 @@ export async function findAllReportsByEmail(email) {
 
     try {
         // 1. Get Lead ID
-        const { data: lead } = await supabase
+        const { data: lead } = await getSupabase()
             .from('leads')
             .select('id')
             .eq('email', email)
@@ -128,7 +138,7 @@ export async function findAllReportsByEmail(email) {
         if (!lead) return [];
 
         // 2. Get All Reports
-        const { data: reports } = await supabase
+        const { data: reports } = await getSupabase()
             .from('reports')
             .select('id, zip_path, prompt, created_at')
             .eq('lead_id', lead.id)
@@ -150,7 +160,7 @@ export async function createJob(email, prompt) {
     try {
         const leadId = await saveLead(email); // Ensure lead exists
 
-        const { data, error } = await supabase
+        const { data, error } = await getSupabase()
             .from('jobs')
             .insert([{
                 email,
@@ -180,7 +190,7 @@ export async function createJob(email, prompt) {
  */
 export async function getNextJob() {
     try {
-        const { data, error } = await supabase
+        const { data, error } = await getSupabase()
             .rpc('get_next_job');
 
         if (error) {
@@ -216,7 +226,7 @@ export async function updateJobStep(jobId, step, partialState = {}) {
         // Note: Supabase JS update merges top-level columns, but for JSONB columns it replaces the value unless we use a transformed query.
         // Ideally we pass the full `state` object here.
 
-        const { error } = await supabase
+        const { error } = await getSupabase()
             .from('jobs')
             .update({
                 step,
@@ -238,7 +248,7 @@ export async function updateJobStep(jobId, step, partialState = {}) {
  */
 export async function completeJob(jobId, result) {
     try {
-        await supabase
+        await getSupabase()
             .from('jobs')
             .update({
                 status: 'completed',
@@ -259,7 +269,7 @@ export async function completeJob(jobId, result) {
  */
 export async function failJob(jobId, errorMessage) {
     try {
-        await supabase
+        await getSupabase()
             .from('jobs')
             .update({
                 status: 'failed',
@@ -279,7 +289,7 @@ export async function failJob(jobId, errorMessage) {
  */
 export async function findActiveJobByEmail(email) {
     try {
-        const { data } = await supabase
+        const { data } = await getSupabase()
             .from('jobs')
             .select('id, status, step, prompt, created_at')
             .eq('email', email)
@@ -300,7 +310,7 @@ export async function findActiveJobByEmail(email) {
  */
 export async function recoverStalledJobs() {
     try {
-        const { error } = await supabase
+        const { error } = await getSupabase()
             .from('jobs')
             .update({ status: 'queued', updated_at: new Date().toISOString() })
             .eq('status', 'processing');
