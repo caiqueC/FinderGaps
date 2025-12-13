@@ -114,13 +114,26 @@ export class JobManager {
     /**
      * Manages SSE connections
      */
-    attach(email, res) {
+    /**
+     * Manages SSE connections
+     */
+    async attach(email, res) {
         if (!this.activeListeners.has(email)) {
             this.activeListeners.set(email, []);
         }
 
         this.setupResponse(res);
         this.activeListeners.get(email).push(res);
+
+        // Send current status immediately
+        try {
+            const job = await findActiveJobByEmail(email);
+            if (job && job.status === 'queued') {
+                res.write(`event: log\ndata: ${JSON.stringify({ text: "Solicitação na fila de processamento...", type: 'info' })}\n\n`);
+            }
+        } catch (e) {
+            console.error("Error sending initial status:", e);
+        }
 
         // Clean up on close
         res.on('close', () => {

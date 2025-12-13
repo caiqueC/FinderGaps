@@ -98,7 +98,7 @@ app.post('/api/generate', async (req, res) => {
             // Actually, we can modify startJob to not require a response immediately, 
             // OR we just don't pass one and JobManager handles empty listeners.
             // Let's modify JobManager.startJob to handle optional initialRes.
-            jobManager.startJob(email, prompt, runAnalysis, null);
+            await jobManager.startJob(email, prompt, runAnalysis, null);
             return res.json({ success: true, message: 'Job started' });
         } else {
             // Anonymous flow: MUST keep holding connection (Legacy)
